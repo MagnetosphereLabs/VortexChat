@@ -24,6 +24,14 @@ Use the actual tag from a published Vortex release. The installer does not insta
 
 The Node installer pins a matching web archive in `clients.lock.json`. Open the Node domain to use that client in a browser. See the [Node repository](https://github.com/MagnetosphereLabs/VortexNode) for server installation and updates.
 
+To compile on your own Linux PC, follow the [local build guide](docs/vortex/BUILD_LINUX.md). After installing Git, Python and Podman, the build-and-install command from this checkout is:
+
+```sh
+python3 scripts/build-linux.py --install
+```
+
+It keeps the compiler toolchains and dependencies in a reusable build container, then installs the application with its desktop launcher and sandbox. See [trying Vortex Chat](docs/vortex/TESTING.md) for first connection, two-account testing and screen sharing.
+
 ## Development
 
 The shared web/desktop adapter is in `fluxer_app/src/vortex`. It translates Fluxer view models into encrypted Node operations locally. The server does not implement a plaintext Discord-compatible message API.

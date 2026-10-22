@@ -1,0 +1,79 @@
+# Build and install on your Linux PC
+
+Use this when you want to compile the client yourself or do not want to wait for a GitHub build. The builder uses your PC's processor in a cached Ubuntu 22.04 container. The installed application runs directly on your desktop. It does not require a container to run.
+
+This builds a local development application, not a qualified release. The backend must also be a matching Vortex Node integration version. An upstream Fluxer server or an old Vortex Node does not provide this protocol.
+
+## 1. Install the build launcher
+
+On Ubuntu, Pop!_OS or Linux Mint:
+
+```sh
+sudo apt update
+sudo apt install git python3 podman
+```
+
+On Fedora:
+
+```sh
+sudo dnf install git python3 podman
+```
+
+On Arch or CachyOS, use an up-to-date system:
+
+```sh
+sudo pacman -S --needed git python podman
+```
+
+An already configured Docker installation also works: add `--engine docker` to the build command. The engine must work as your regular user. Do not run the builder with `sudo` or add a privileged-container option. Rootless Podman needs the normal user-namespace and subordinate UID/GID configuration supplied by your distribution.
+
+Use an x86-64 PC with glibc 2.35 or newer. Allow about 40 GiB for the checkout, dependencies, compiler outputs and container cache; 16 GiB RAM or more is recommended. The first build downloads several toolchains and dependencies. Later builds reuse them. A powerful CPU helps compilation; download speed still matters.
+
+## 2. Download the source and build
+
+Run these commands in a terminal as your regular desktop user:
+
+```sh
+git clone --branch vortex/integration-20261022 --single-branch https://github.com/MagnetosphereLabs/VortexChat.git
+cd VortexChat
+python3 scripts/build-linux.py --install
+```
+
+The command installs the pinned Node.js, pnpm and Rust toolchains inside the builder, compiles the shared interface and native Linux integrations, verifies the patched Electron runtime, packages the application, and asks for `sudo` only when installing it on your desktop. It prints the failing command if a step fails. Fix that error and rerun the same command; compilation caches are retained.
+
+The default Rust job count considers your CPU and RAM. On a PC with enough RAM, explicitly choose a larger count, for example:
+
+```sh
+python3 scripts/build-linux.py --install --jobs 16
+```
+
+The build keeps a stopped container named `vortex-chat-build-…` and files in `.vortex-build`. On SELinux systems, the checkout is labeled for container access. Use a dedicated checkout rather than mounting a home directory or unrelated files. The builder mounts only this checkout; it does not mount your desktop session, keyring or SSH agent.
+
+## 3. Open the application
+
+Open **Vortex Chat** from your application menu, or run:
+
+```sh
+vortex-chat
+```
+
+Choose **Add instance**, enter your Node's HTTPS domain and sign in with your Node account. Keep your desktop keyring unlocked. Never launch the app with `sudo`, `--no-sandbox` or a plaintext password-store option.
+
+The installer supports the Ubuntu/Debian, Fedora and Arch families. COSMIC, GNOME, KDE and other desktop sessions need their working screen-capture portal and audio services. Test your actual microphone, display and shared audio using the [test guide](TESTING.md).
+
+## Updates and build files
+
+From the same checkout, with no local source edits:
+
+```sh
+git pull --ff-only
+python3 scripts/build-linux.py --install
+```
+
+Close and reopen the app after installation. Your account data stays in its existing desktop profile. Local builds do not change the stable release feed or claim to have passed release qualification.
+
+To build without installing, omit `--install`. The command prints the complete installation command with the source commit and archive checksum. Outputs are `.vortex-build/vortex-chat-linux-x64.tar.gz` and `.vortex-build/build-result.json`.
+
+Add `--with-web` to also create `.vortex-build/vortex-chat-web.tar.gz`. That archive is for development and does not replace the Node installer's published, checksum-pinned client manifest. Normal Node releases install their matching web client automatically.
+
+The local builder runs installer tests, desktop type checks and encrypted database tests. It does not itself perform the browser, packaged GUI or actual screen-sharing acceptance checks. Those have separate CI and hardware test procedures; compiling successfully does not prove every feature works.

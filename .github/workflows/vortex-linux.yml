@@ -8,6 +8,7 @@ on:
       - 'packages/**'
       - 'install-linux.py'
       - 'scripts/test-install-linux.py'
+      - 'scripts/build-linux*'
       - 'pnpm-lock.yaml'
       - '.github/workflows/vortex-linux.yml'
   workflow_dispatch:
@@ -70,7 +71,10 @@ jobs:
       - name: Verify encrypted desktop database
         run: cargo test --locked --manifest-path fluxer_desktop/native/app-store/Cargo.toml
       - name: Verify Linux installer boundaries
-        run: python3 scripts/test-install-linux.py
+        run: |
+          python3 scripts/test-install-linux.py
+          python3 -m py_compile scripts/build-linux.py
+          bash -n scripts/build-linux-container.sh
       - name: Check desktop types
         run: pnpm --filter fluxer_desktop typecheck
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9

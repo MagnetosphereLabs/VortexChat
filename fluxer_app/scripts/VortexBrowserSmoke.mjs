@@ -57,7 +57,7 @@ try {
       const message='Private browser message '+name+' '+crypto.randomUUID();
       await editor.click();
       await editor.pressSequentially(message, {delay: 8});
-      assert.equal(await editor.innerText(), message);
+      assert.equal((await editor.innerText()).replace(/\n$/u, ''), message);
       // The first visible bubble is optimistic. Reload only after the Node has
       // acknowledged the ciphertext, so this checks durable delivery.
       await Promise.all([

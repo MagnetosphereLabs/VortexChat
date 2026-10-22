@@ -11,6 +11,7 @@ import platform
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -59,6 +60,35 @@ def validate_manifest(manifest, release):
     if not re.fullmatch(r'[a-f0-9]{64}', client['sha256']):
         raise ValueError('Invalid release checksum')
     return client
+
+
+def local_manifest(commit, digest):
+    if not re.fullmatch(r'[a-f0-9]{40}', commit or ''):
+        raise ValueError('A full source commit is required for a local build')
+    if not re.fullmatch(r'[a-f0-9]{64}', digest or ''):
+        raise ValueError('A SHA-256 checksum is required for a local build')
+    return {'protocol_version': 1, 'release': 'vortex-local-' + commit[:12] + '-' + digest[:12],
+            'source_commit': commit, 'build_type': 'local-source', 'qualified_release': False,
+            'linux_x64': {'sha256': digest}}
+
+
+def copy_local_archive(source, destination, expected):
+    """Snapshot a user-built archive into private staging before checking it."""
+    digest, size = hashlib.sha256(), 0
+    descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_ARCHIVE:
+            raise ValueError('The local archive must be a regular file within the size limit')
+        with Path(destination).open('xb') as output:
+            while chunk := stream.read(1024**2):
+                size += len(chunk)
+                if size > MAX_ARCHIVE:
+                    raise ValueError('The local archive exceeds its size limit')
+                digest.update(chunk)
+                output.write(chunk)
+    if digest.hexdigest() != expected:
+        raise ValueError('The local archive does not match its build checksum')
 
 
 def extract(archive, destination):
@@ -182,10 +212,18 @@ def integrate(destination):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--release', required=True, help='Published Vortex release tag')
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument('--release', help='Published Vortex release tag')
+    source.add_argument('--local-archive', type=Path, help='Explicitly install an archive you built locally')
+    parser.add_argument('--sha256', help='Required checksum of a local archive')
+    parser.add_argument('--source-commit', help='Required full source commit for a local archive')
     args = parser.parse_args()
-    if not re.fullmatch(r'vortex-[A-Za-z0-9][A-Za-z0-9._-]{0,100}', args.release):
+    if args.release and not re.fullmatch(r'vortex-[A-Za-z0-9][A-Za-z0-9._-]{0,100}', args.release):
         parser.error('Enter a Vortex release tag')
+    if args.release and (args.sha256 or args.source_commit):
+        parser.error('--sha256 and --source-commit are only used with --local-archive')
+    manifest = local_manifest(args.source_commit, args.sha256) if args.local_archive else None
+    release = manifest['release'] if manifest else args.release
     if os.geteuid() != 0:
         parser.error('Run this installer with sudo; the application itself runs as your normal user')
     if platform.system() != 'Linux' or platform.machine() != 'x86_64':
@@ -198,22 +236,28 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         releases = ROOT / 'releases'
         releases.mkdir(parents=True, exist_ok=True)
-        destination = releases / args.release
+        destination = releases / release
         with tempfile.TemporaryDirectory(prefix='.install-', dir=releases) as temporary:
             work = Path(temporary)
-            manifest_path = work / 'desktop-release.json'
-            print('Downloading the release manifest…', flush=True)
-            download(RELEASES + args.release + '/desktop-release.json', manifest_path, maximum=65536)
-            manifest = json.loads(manifest_path.read_text())
-            client = validate_manifest(manifest, args.release)
+            archive = work / 'desktop.tar.gz'
+            if args.local_archive:
+                print('Verifying your local build (not a qualified release)…', flush=True)
+                copy_local_archive(args.local_archive, archive, args.sha256)
+                client = manifest['linux_x64']
+            else:
+                manifest_path = work / 'desktop-release.json'
+                print('Downloading the release manifest…', flush=True)
+                download(RELEASES + release + '/desktop-release.json', manifest_path, maximum=65536)
+                manifest = json.loads(manifest_path.read_text())
+                client = validate_manifest(manifest, release)
             if destination.exists():
                 installed = json.loads((destination / 'vortex-release.json').read_text())
                 if installed != manifest:
                     raise ValueError('A different application already occupies this immutable release')
             else:
                 print('Downloading and verifying Vortex Chat…', flush=True)
-                archive = work / 'desktop.tar.gz'
-                download(client['url'], archive, client['sha256'])
+                if not args.local_archive:
+                    download(client['url'], archive, client['sha256'])
                 staging = work / 'application'
                 staging.mkdir()
                 extract(archive, staging)

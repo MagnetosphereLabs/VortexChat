@@ -10,6 +10,7 @@
 /.direnv/
 /.fluxer/
 /.pnpm-store/
+/.vortex-build/
 /.vscode/
 
 **/*.css.d.ts

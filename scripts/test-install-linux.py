@@ -16,6 +16,32 @@ spec.loader.exec_module(installer)
 
 
 class LinuxInstallerTests(unittest.TestCase):
+    def test_local_build_is_distinct_from_a_qualified_release(self):
+        manifest = installer.local_manifest('a' * 40, 'b' * 64)
+        self.assertFalse(manifest['qualified_release'])
+        self.assertEqual(manifest['build_type'], 'local-source')
+        self.assertNotIn('url', manifest['linux_x64'])
+        self.assertNotEqual(manifest['release'], installer.local_manifest('a' * 40, 'c' * 64)['release'])
+        for commit, digest in [('main', 'b' * 64), ('a' * 40, ''), ('a' * 40, '../archive')]:
+            with self.assertRaises(ValueError):
+                installer.local_manifest(commit, digest)
+
+    def test_local_archive_is_snapshotted_and_verified(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, snapshot = root / 'source', root / 'snapshot'
+            source.write_bytes(b'original')
+            installer.copy_local_archive(source, snapshot, hashlib.sha256(b'original').hexdigest())
+            source.write_bytes(b'changed')
+            self.assertEqual(snapshot.read_bytes(), b'original')
+            with self.assertRaisesRegex(ValueError, 'checksum'):
+                installer.copy_local_archive(source, root / 'tampered', hashlib.sha256(b'original').hexdigest())
+            with patch.object(installer, 'MAX_ARCHIVE', 1), self.assertRaisesRegex(ValueError, 'size limit'):
+                installer.copy_local_archive(source, root / 'oversize', hashlib.sha256(b'changed').hexdigest())
+            (root / 'link').symlink_to(source)
+            with self.assertRaises(OSError):
+                installer.copy_local_archive(root / 'link', root / 'linked', 'a' * 64)
+
     def archive(self, path, extra=()):
         with tarfile.open(path, 'w:gz') as bundle:
             for name, data in [('vortex-chat', b'\x7fELFapplication'), ('chrome-sandbox', b'\x7fELFsandbox'), ('resources/app.asar', b'app')]:
