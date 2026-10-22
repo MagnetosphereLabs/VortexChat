@@ -181,6 +181,10 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   await bobRequest('POST','/channels/'+dm.id+'/messages',{content:'A new message reopens the conversation'});
   await client.refresh(true);
   assert.equal((await request('GET','/users/@me/channels')).body.some(channel=>channel.id===dm.id),true);
+  await bobRequest('DELETE','/users/@me/relationships/'+me.id);
+  await client.refresh(true);
+  await assert.rejects(request('POST','/channels/'+dm.id+'/messages',{content:'Must not send after the other person removes the friendship'}),/Become friends/);
+  assert.equal((await request('GET','/channels/'+dm.id+'/messages')).body.some(message=>message.content==='Retained private conversation'),true);
 
   // Disabling an account also revokes its active authentication token.
   await auth.api(url,'admin.user',{user:bobPair.id,disabled:true,quota:1024},owner.token);

@@ -253,6 +253,7 @@ let action = async (t, A = {}) => {
   const value = await $A(state.pair.url, t, A, state.pair.token);
   if (value.formerUsers) state.formerUsers = value.formerUsers;
   if (value.friendIds) state.friendIds = new Set(value.friendIds);
+  if (Array.isArray(value.friends)) state.friendIds = new Set(value.friends.filter(friend => friend.status === 'friend').map(friend => friend.user === state.me.id ? friend.other : friend.user));
   return value;
 };
 let roomRefreshQueue=Promise.resolve();
@@ -836,6 +837,7 @@ function sync(fresh=false) {
     const directory=await action('directory');
     for(const user of directory.users) await verifyIdentity(user);
     state.users=directory.users;
+    await action('friends');
     await refreshRooms();
     await withDeviceLock(flushOutbox);
     for(const room of state.rooms) await withDeviceLock(()=>syncRoom(room));

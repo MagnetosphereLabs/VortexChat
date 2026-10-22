@@ -150,7 +150,9 @@ export async function vortexRequest(origin,method,path,options={},token) {
     else if(route==='/users/@me/relationships'&&method==='POST') {
       const user=state.users.find(user=>user.username===body.username||ids.get('user',user.id)===body.user_id);
       if(!user)throw Object.assign(new Error('No account has that username on this Node'),{status:404});
-      await core.action('friend',{user:user.id,kind:'request'});status=204;
+      await core.action('friend',{user:user.id,kind:'request'});
+      const relationship=(await session.ready('local')).relationships.find(relationship=>relationship.id===ids.get('user',user.id));
+      if(relationship)session.emit('RELATIONSHIP_ADD',relationship);status=204;
     } else if((match=route.match(/^\/users\/@me\/relationships\/(\d+)$/u))) {
       const id=ids.raw('user',match[1]);
       if(method==='PUT')await core.action('friend',{user:id,kind:body.type===2?'block':'accept'});
