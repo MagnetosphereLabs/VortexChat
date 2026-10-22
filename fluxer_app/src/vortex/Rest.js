@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import {auth} from './vendor/auth.js';
 import {getSession,login,register,logout} from './Session.js';
-import {channelView,guildView,userView,materializeMessages} from './Projection.js';
+import {channelView,guildView,userView,materializeMessages,callView} from './Projection.js';
 
 export function vortexOrigin(endpoint) {
   if(!endpoint)return null;
@@ -127,6 +127,15 @@ export async function vortexRequest(origin,method,path,options={},token) {
       else if(suffix===''&&method==='PATCH'){await core.updateMetadata(room,{name:body.name,topic:body.topic,position:body.position});data=channelView(ids,state,session.room(match[1]));session.emit('CHANNEL_UPDATE',data);}
       else if(suffix===''&&method==='DELETE') {await core.action('room.delete',{room:room.id});session.emit('CHANNEL_DELETE',channelView(ids,state,room));await session.refresh();status=204;}
       else if(suffix==='/typing'&&method==='POST'){await core.send({type:'typing'},'typing',room);status=204;}
+      else if(suffix==='/call'&&method==='GET')data={ringable:!room.space,...callView(ids,state,room)};
+      else if(['/call/ring','/call/stop-ringing'].includes(suffix)&&method==='POST'){
+        if(room.space)throw new Error('Ringing is available in private conversations');
+        const recipients=body.recipients?body.recipients.map(id=>ids.raw('user',id)):suffix==='/call/ring'?room.meta.members.filter(id=>id!==state.me.id):[state.me.id];
+        if(recipients.some(id=>!room.meta.members.includes(id)))throw new Error('Call recipient is not in this conversation');
+        if(suffix==='/call/ring'&&session.voice?.room!==room.id)throw new Error('Join the encrypted call before ringing');
+        await core.send({type:'call',state:suffix==='/call/ring'?'ring':'stop-ringing',recipients},'call',room);status=204;
+      } else if(suffix==='/rtc-regions'&&method==='GET')data=[];
+      else if(suffix==='/call'&&method==='PATCH'){if(body.region&&body.region!=='auto')throw new Error('This Node uses its own media relay');data={region:'auto'};}
       else if(suffix==='/pins'&&method==='GET')data=await Promise.all(materializeMessages(state,room).filter(e=>e.pinned&&!e.deleted).map(e=>session.message(room,e)));
       else if(suffix.startsWith('/messages/search')&&method==='GET') {
         const matching=materializeMessages(state,room).filter(e=>!e.deleted&&(e.payload.text||'').toLocaleLowerCase().includes(String(query.content||'').toLocaleLowerCase()));
@@ -135,7 +144,7 @@ export async function vortexRequest(origin,method,path,options={},token) {
         const eventRoute=suffix.match(/^\/(messages|pins)\/(\d+)(?:\/(ack|reactions)(?:\/([^/]+)(?:\/([^/]+))?)?)?$/u);
         if(!eventRoute)unsupported(route);
         const target=ids.raw('message',eventRoute[2]);
-        if(eventRoute[3]==='ack'){state.prefs.read??={};state.prefs.read[room.id]=target;await core.savePreferences();data={token:null};}
+        if(eventRoute[3]==='ack'){state.prefs.read??={};state.prefs.read[room.id]=target;await core.savePreferences();session.emit('MESSAGE_ACK',{channel_id:match[1],message_id:eventRoute[2],mention_count:0,manual:false});data={token:null};}
         else if(eventRoute[3]==='reactions'){
           if(!['PUT','DELETE'].includes(method))unsupported(route);
           await core.send({type:'reaction',target,emoji:decodeURIComponent(eventRoute[4]),remove:method==='DELETE'},'message',room);status=204;
@@ -150,6 +159,21 @@ export async function vortexRequest(origin,method,path,options={},token) {
         }
       }
     } else if(route==='/users/@me/guilds'&&method==='GET')data=state.spaces.map(space=>guildView(ids,state,space).properties);
+    else if((match=route.match(/^\/users\/@me\/guilds\/(\d+|@me)\/settings$/u))&&method==='PATCH'){
+      const key=match[1];
+      const until=config=>config?.end_time?Math.floor(Date.parse(config.end_time)/1000):Math.floor(Date.now()/1000)+10*365*86400;
+      if(key!=='@me'&&typeof body.muted==='boolean')await core.action('mute',{scope:'space:'+ids.raw('guild',key),until:body.muted?until(body.mute_config):0});
+      for(const [channel,override]of Object.entries(body.channel_overrides||{}))if(typeof override.muted==='boolean')
+        await core.action('mute',{scope:'room:'+ids.raw('channel',channel),until:override.muted?until(override.mute_config):0});
+      state.prefs.guildSettings??={};
+      const previous=state.prefs.guildSettings[key]||{};
+      state.prefs.guildSettings[key]={...previous,...body,channel_overrides:{...previous.channel_overrides,...body.channel_overrides},guild_id:key==='@me'?null:key};
+      await core.savePreferences();data=state.prefs.guildSettings[key];session.emit('USER_GUILD_SETTINGS_UPDATE',data);
+    } else if((match=route.match(/^\/users\/@me\/channels\/(\d+)\/pin$/u))&&['PUT','DELETE'].includes(method)){
+      if(!session.room(match[1])||session.room(match[1]).space)throw new Error('Private conversation unavailable');
+      state.prefs.pinnedDms=(state.prefs.pinnedDms||[]).filter(id=>id!==match[1]);
+      if(method==='PUT')state.prefs.pinnedDms.push(match[1]);await core.savePreferences();status=204;
+    }
     else if(route==='/vortex/node'&&method==='GET')data={...await core.action('me'),applications:(await verifyNode(origin)).applications};
     else if(route==='/vortex/node'&&method==='PATCH'){await core.action('policy',body);state.me=await core.action('me');data=state.me.policy;}
     else if(route==='/vortex/users'&&method==='GET')data=await core.action('admin.users');

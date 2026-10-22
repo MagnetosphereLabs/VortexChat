@@ -71,7 +71,8 @@ const BROWSER_HANDOFF_FAILED_DESCRIPTOR = msg({
 const logger = new Logger('AuthLoginBrowserStep');
 
 export function resolveShouldOfferBrowserStep(): boolean {
-	return isDesktop();
+	// OPAQUE unlocks keys on this device; token-only browser handoff cannot do so.
+	return false;
 }
 
 export const BrowserHandoffStep = Object.freeze({

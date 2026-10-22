@@ -4,49 +4,13 @@ const DESKTOP_CEILING_CONNECT_SOURCES: ReadonlyArray<string> = Object.freeze(['h
 const DESKTOP_CEILING_IMAGE_SOURCES: ReadonlyArray<string> = Object.freeze(['https:', 'blob:', 'data:']);
 const DESKTOP_CEILING_MEDIA_SOURCES: ReadonlyArray<string> = Object.freeze(['https:', 'blob:', 'data:']);
 
-const FRAME_SOURCES: ReadonlyArray<string> = Object.freeze([
-	'https://www.youtube.com/embed/',
-	'https://www.youtube.com/s/player/',
-]);
-
-const IMAGE_SOURCES: ReadonlyArray<string> = Object.freeze([
-	'https://*.fluxer.app',
-	'https://i.ytimg.com',
-	'https://*.youtube.com',
-	'https://*.fluxer.media',
-	'https://fluxer.media',
-]);
-
-const MEDIA_SOURCES: ReadonlyArray<string> = Object.freeze([
-	'https://*.fluxer.app',
-	'https://*.youtube.com',
-	'https://*.fluxer.media',
-	'https://fluxer.media',
-]);
-
-const SCRIPT_SOURCES: ReadonlyArray<string> = Object.freeze(['https://*.fluxer.app']);
-
-const STYLE_SOURCES: ReadonlyArray<string> = Object.freeze([
-	'https://*.fluxer.app',
-	'https://fonts.googleapis.com',
-	'https://api.fonts.coollabs.io',
-]);
-
-const FONT_SOURCES: ReadonlyArray<string> = Object.freeze([
-	'https://*.fluxer.app',
-	'https://fonts.gstatic.com',
-	'https://api.fonts.coollabs.io',
-]);
-
-const CONNECT_SOURCES: ReadonlyArray<string> = Object.freeze([
-	'https://*.fluxer.app',
-	'wss://*.fluxer.app',
-	'https://*.fluxer.media',
-	'wss://*.fluxer.media',
-	'https://fluxer-uploads.ewr1.vultrobjects.com',
-	'https://fluxerstatus.com',
-	'https://fluxer.media',
-]);
+const FRAME_SOURCES: ReadonlyArray<string> = Object.freeze([]);
+const IMAGE_SOURCES: ReadonlyArray<string> = Object.freeze([]);
+const MEDIA_SOURCES: ReadonlyArray<string> = Object.freeze([]);
+const SCRIPT_SOURCES: ReadonlyArray<string> = Object.freeze([]);
+const STYLE_SOURCES: ReadonlyArray<string> = Object.freeze([]);
+const FONT_SOURCES: ReadonlyArray<string> = Object.freeze([]);
+const CONNECT_SOURCES: ReadonlyArray<string> = Object.freeze([]);
 
 const LOOPBACK_HTTP_SOURCES: ReadonlyArray<string> = Object.freeze([
 	'http://localhost:*',
@@ -54,9 +18,9 @@ const LOOPBACK_HTTP_SOURCES: ReadonlyArray<string> = Object.freeze([
 	'http://127.0.0.1:*',
 ]);
 
-const WORKER_SOURCES: ReadonlyArray<string> = Object.freeze(['https://*.fluxer.app', 'blob:']);
+const WORKER_SOURCES: ReadonlyArray<string> = Object.freeze(['blob:']);
 
-const MANIFEST_SOURCES: ReadonlyArray<string> = Object.freeze(['https://*.fluxer.app']);
+const MANIFEST_SOURCES: ReadonlyArray<string> = Object.freeze([]);
 
 const SELF_SOURCE = "'self'";
 const NONE_SOURCE = "'none'";

@@ -4,6 +4,7 @@ export function registerAttachment(session,file) {
   const url=new URL('/vortex/local-file/'+crypto.randomUUID(),globalThis.location?.origin||session.pair.url).href;
   files.set(url,{session,file});return url;
 }
+export function registerAttachmentAlias(url,reference) {const item=files.get(reference);if(item)files.set(url,item);}
 export function unregisterAttachments(session) {for(const [url,item]of files)if(item.session===session)files.delete(url);}
 export function isVortexAttachment(url) {return files.has(url);}
 function anchorDownload(url,name) {

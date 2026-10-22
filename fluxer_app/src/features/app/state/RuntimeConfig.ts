@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {verifyNode, vortexOrigin} from '@app/vortex/Rest.js';
 import DesktopRuntimeTransactions, {
 	type CommittedDesktopRuntime,
 	DesktopRuntimeTransactionError,
@@ -537,6 +538,9 @@ class RuntimeConfig {
 
 	async resolveEndpoint(request: InstanceSnapshotResolveRequest): Promise<InstanceSnapshotResolution> {
 		const resolution = await InstanceSnapshotStore.resolve(request);
+		const origin = vortexOrigin(resolution.snapshot.apiEndpoint);
+		if (!origin) throw new Error('Enter the address of a Vortex Node with encrypted Chat enabled');
+		await verifyNode(origin);
 		this.assertCodeVersion(resolution.snapshot.apiCodeVersion);
 		return resolution;
 	}

@@ -31,6 +31,7 @@ import {
 } from '@electron/main/DesktopTray';
 import {getDesktopUpdateState, observeDesktopUpdateState, startDesktopUpdate} from '@electron/main/DesktopUpdateGate';
 import {DownloadChecksumError, downloadFile} from '@electron/main/FileDownloads';
+import {registerVortexDeviceKey} from '@electron/main/VortexDeviceKey';
 import {registerVortexDownloads} from '@electron/main/VortexDownloads';
 import {getGatewayOriginRegistry} from '@electron/main/GatewayOriginRegistry';
 import {retryBlockedGlobalShortcutHooks} from '@electron/main/GlobalShortcutsIpc';
@@ -178,6 +179,7 @@ function applyUnreadBadge(badge: number): void {
 
 export function registerIpcHandlers(): void {
 	registerVortexDownloads();
+	registerVortexDeviceKey();
 	registerVoiceDebugEventSinkPopoutIpcHandlers();
 	registerVoiceBackgroundMediaCacheHandlers();
 	ipcMain.handle(DESKTOP_MODULE_CHANNELS.ensure, (event, moduleName: unknown) => {
@@ -603,6 +605,7 @@ export function cleanupGatewayTransportHandlers(): void {
 }
 
 export function cleanupIpcHandlers(_options: {quitting?: boolean} = {}): void {
+	ipcMain.removeHandler('vortex-device-key');
 	cleanupDesktopRuntimeConfigHandlers();
 	browserHandoff?.cleanup();
 	browserHandoff = null;

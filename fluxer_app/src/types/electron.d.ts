@@ -236,6 +236,7 @@ export interface ElectronAPI {
 	offlineBuild?: boolean;
 	openExternal(url: string): Promise<void>;
 	downloadFile(url: string, suggestedName: string, sha256?: string | null): Promise<DownloadResult>;
+	vortexDeviceKey(purpose: 'account' | 'local'): Promise<string>;
 	vortexDownloadStart(name: string, size: number): Promise<string | null>;
 	vortexDownloadChunk(id: string, chunk: Uint8Array): Promise<void>;
 	vortexDownloadFinish(id: string): Promise<void>;

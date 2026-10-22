@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import {randomBytes} from 'node:crypto';
+import {randomBytes, hkdfSync} from 'node:crypto';
 import {readFileSync, writeFileSync, mkdirSync} from 'node:fs';
 import {dirname, join} from 'node:path';
-import {safeStorage} from 'electron';
+import {app, ipcMain, safeStorage} from 'electron';
+import {requirePrivilegedRendererDocumentSender} from '@electron/main/PrivilegedRendererDocuments';
 
 /** Never permit Electron's plaintext Linux fallback for saved account credentials. */
 export function deviceDatabaseKey(databasePath: string): string {
@@ -26,4 +27,16 @@ export function deviceDatabaseKey(databasePath: string): string {
     const key = safeStorage.decryptString(encrypted);
     if (!/^[a-f0-9]{64}$/.test(key)) throw new Error('The Vortex device key is invalid');
     return key;
+}
+
+export function registerVortexDeviceKey(): void {
+    ipcMain.handle('vortex-device-key', (event, purpose: unknown) => {
+        requirePrivilegedRendererDocumentSender(event, 'vortex-device-key');
+        if (purpose !== 'account' && purpose !== 'local') throw new Error('Invalid device key purpose');
+        const databaseKey = deviceDatabaseKey(join(app.getPath('userData'), 'desktop-app-store.sqlite3'));
+        // The SQLCipher key never crosses IPC. Each renderer wrapping key has its own domain.
+        const key = hkdfSync('sha256', Buffer.from(databaseKey, 'hex'),
+            Buffer.from('Vortex Chat device storage v1'), Buffer.from(purpose), 32);
+        return Buffer.from(key).toString('base64');
+    });
 }

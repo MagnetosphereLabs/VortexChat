@@ -23,12 +23,14 @@ let stderr='';server.stderr.on('data',chunk=>stderr+=chunk);
 try {
   for(let i=0;i<200;i++){try{if((await fetch(origin+'/health')).ok)break;}catch{}await delay(50);}
   assert.equal((await fetch(origin+'/health')).status,200,stderr);
-  await auth.login({url:origin,username:'browser.owner',password});
+  const owner=await auth.login({url:origin,username:'browser.owner',password});
+  await auth.api(origin,'policy',{title:'Browser test',signupUntil:0,createSpaces:'everyone',chatQuota:0,maxUpload:10485760},owner.token);
   let failures=0;
   for(const name of (process.env.VORTEX_BROWSERS||'chromium,firefox,webkit').split(',')) {
     const browser=await playwright[name].launch({headless:true});
     const context=await browser.newContext({viewport:{width:1440,height:1000},locale:'en-US'});
-    const page=await context.newPage();const errors=[];
+    const page=await context.newPage();const errors=[],outbound=[];
+    page.on('request',request=>{if(request.method()==='POST')outbound.push(request.postData()||'');});
     page.on('pageerror',error=>errors.push(String(error)));
     page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
     page.on('requestfailed',request=>errors.push('Request failed: '+request.url()));
@@ -44,7 +46,20 @@ try {
       await page.screenshot({path:join(artifacts,name+'.png'),fullPage:true});
       await page.reload({waitUntil:'domcontentloaded'});
       await page.getByText('Friends',{exact:true}).first().waitFor({timeout:60000});
-      console.log(name+': sign-in and encrypted session restore passed');
+      await page.locator('[data-flx="app.sidebar-nav.add-guild-button.button.add-guild"]').click();
+      await page.locator('[data-flx="guild.add-guild-modal.landing-view.action-button.view-change"]').click();
+      await page.locator('input[name="name"]').fill('Private '+name+' Space');
+      await page.locator('[data-flx="guild.add-guild-modal.guild-create-form.button.submit"]').click();
+      const editor=page.locator('[contenteditable="true"][role="textbox"]').first();
+      await editor.waitFor({timeout:60000});
+      const message='Private browser message '+name+' '+crypto.randomUUID();
+      await editor.fill(message);await editor.press('Enter');
+      await page.getByText(message,{exact:true}).first().waitFor({timeout:30000});
+      await page.reload({waitUntil:'domcontentloaded'});
+      await page.getByText(message,{exact:true}).first().waitFor({timeout:60000});
+      assert.equal(outbound.some(body=>body.includes(message)),false,'Decrypted message escaped into a network request');
+      await page.screenshot({path:join(artifacts,name+'-conversation.png'),fullPage:true});
+      console.log(name+': sign-in, encrypted session restore, Space creation and encrypted messaging passed');
     } catch(error) {
       failures++;console.error(name+': '+String(error));
       await page.screenshot({path:join(artifacts,name+'-failure.png'),fullPage:true}).catch(()=>{});
@@ -54,5 +69,6 @@ try {
   }
   assert.equal(failures,0,'Browser sign-in must pass on every tested engine');
 } finally {
-  server.kill('SIGTERM');await new Promise(resolve=>server.once('exit',resolve));await rm(dir,{recursive:true,force:true});
+  if(server.exitCode===null){const exited=new Promise(resolve=>server.once('exit',resolve));server.kill('SIGTERM');const deadline=setTimeout(()=>server.kill('SIGKILL'),2000);await exited;clearTimeout(deadline);}
+  await rm(dir,{recursive:true,force:true});
 }

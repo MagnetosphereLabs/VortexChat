@@ -38,6 +38,8 @@ jobs:
       - name: Build encrypted web client
         run: pnpm --filter fluxer_app build
       - name: Check client types
+        id: types
+        continue-on-error: true
         run: pnpm --filter fluxer_app typecheck:only
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -82,15 +84,20 @@ jobs:
           path: browser-results
           retention-days: 7
       - name: Archive web client and provenance
+        if: steps.types.outcome == 'success'
         run: |
           cp fluxer_app/src/vortex/vendor/PROVENANCE.json fluxer_app/dist/vortex-crypto-provenance.json
           cp fluxer_app/src/vortex/vendor/THIRD_PARTY_NOTICES.txt fluxer_app/dist/vortex-crypto-notices.txt
           tar -C fluxer_app/dist -czf vortex-chat-web.tar.gz .
           sha256sum vortex-chat-web.tar.gz > SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: steps.types.outcome == 'success'
         with:
           name: vortex-chat-web
           path: |
             vortex-chat-web.tar.gz
             SHA256SUMS
           retention-days: 14
+      - name: Require successful type checking
+        if: always() && steps.types.outcome != 'success'
+        run: exit 1

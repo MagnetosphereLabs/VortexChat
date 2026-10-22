@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import {auth} from './vendor/auth.js';
 import {createVortexCore} from './Core.js';
-import {registerAttachment,unregisterAttachments} from './AttachmentDownloads.js';
+import {registerAttachment,registerAttachmentAlias,unregisterAttachments} from './AttachmentDownloads.js';
 import {VortexIds,channelView,guildView,userView,materializeMessages} from './Projection.js';
 
 export class VortexSession {
@@ -22,8 +22,10 @@ export class VortexSession {
       guilds:state.spaces.map(space=>guildView(this.ids,state,space)),private_channels:state.rooms.filter(room=>!room.space).map(room=>channelView(this.ids,state,room)),
       relationships:friends.map(friend=>{const incoming=friend.user!==state.me.id;const id=incoming?friend.user:friend.other;return {id:this.ids.get('user',id),user:userView(this.ids,state.users.find(u=>u.id===id)),
         type:friend.status==='friend'?1:friend.status==='blocked'?2:incoming?3:4,since:new Date(0).toISOString(),share_voice_activity:false,friend_shares_voice_activity:false};}),
-      user_settings:state.prefs.fluxer||undefined,read_states:[],user_guild_settings:[],presences:state.users.map(user=>({user:{id:this.ids.get('user',user.id)},status:user.status||'offline',activities:[]})),
-      rtc_regions:[],notes:{},pinned_dms:[],favorite_memes:[],webauthn_credentials:[]};
+      user_settings:state.prefs.fluxer||undefined,
+      read_states:state.rooms.flatMap(room=>{const id=state.prefs.read?.[room.id];if(!id)return [];try{return [{id:this.ids.get('channel',room.id),last_message_id:this.ids.get('message',id),mention_count:0}];}catch{return [];}}),
+      user_guild_settings:Object.values(state.prefs.guildSettings||{}),presences:state.users.map(user=>({user:{id:this.ids.get('user',user.id)},status:user.status||'offline',activities:[]})),
+      rtc_regions:[],notes:state.prefs.notes||{},pinned_dms:state.prefs.pinnedDms||[],favorite_memes:[],webauthn_credentials:[]};
   }
   async attachment(file) {
     let reference=this.attachmentReferences.get(file.id);
@@ -32,13 +34,20 @@ export class VortexSession {
     const previewable=/^image\/(png|jpeg|webp|gif|avif)$/u.test(file.type)&&file.size<=8*1024**2;
     if(!pending&&previewable&&this.previewBytes+file.size<=32*1024**2) {
       this.previewBytes+=file.size;
-      pending=this.core.download(file).then(blob=>URL.createObjectURL(blob));
+      pending=this.core.download(file).then(async blob=>{
+        const url=URL.createObjectURL(blob);
+        try {
+          const bitmap=await createImageBitmap(blob);
+          const dimensions={width:bitmap.width,height:bitmap.height};bitmap.close();
+          registerAttachmentAlias(url,reference);return {url,...dimensions};
+        }catch(error){URL.revokeObjectURL(url);throw error;}
+      });
       this.attachmentUrls.set(file.id,pending);
       pending.catch(()=>{this.attachmentUrls.delete(file.id);this.previewBytes-=file.size;});
     }
     const preview=pending?await pending.catch(()=>null):null;
-    return {id:await this.ids.add('attachment',file.id),filename:file.name,size:file.size,content_type:preview?file.type:'application/octet-stream',url:reference,proxy_url:preview||reference,
-      width:file.width||null,height:file.height||null,flags:0};
+    return {id:await this.ids.add('attachment',file.id),filename:file.name,size:file.size,content_type:preview?file.type:'application/octet-stream',url:reference,proxy_url:preview?.url||reference,
+      width:preview?.width||file.width||null,height:preview?.height||file.height||null,flags:0};
   }
   async message(room,event,attachments=true) {
     const state=this.core.state;
@@ -73,7 +82,7 @@ export class VortexSession {
     const key=auth.b64(await this.core.mediaKey(room));
     if(key!==this.voice.key){this.voice.key=key;this.emit('VORTEX_MEDIA_KEY',{key});}
   }
-  close(){unregisterAttachments(this);this.core.close();for(const pending of this.attachmentUrls.values())pending.then(URL.revokeObjectURL,()=>{});this.attachmentUrls.clear();this.attachmentReferences.clear();this.listeners.clear();}
+  close(){unregisterAttachments(this);this.core.close();for(const pending of this.attachmentUrls.values())pending.then(value=>URL.revokeObjectURL(value.url),()=>{});this.attachmentUrls.clear();this.attachmentReferences.clear();this.listeners.clear();}
 }
 
 const sessions=new Map();

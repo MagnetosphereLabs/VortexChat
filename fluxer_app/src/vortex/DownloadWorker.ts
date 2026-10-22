@@ -10,16 +10,18 @@ interface Download {
 }
 const downloads = new Map<string, Download>();
 export function receiveDownload(event: ExtendableMessageEvent, origin: string): boolean {
-  const data = event.data;
+  if (!event.data || typeof event.data !== 'object') return false;
+  const data = event.data as Record<string, unknown>;
   if (data?.type !== 'VORTEX_DOWNLOAD') return false;
   const source = event.source as Client | null;
   const port = event.ports[0];
   if (!source || !port || new URL(source.url).origin !== origin || typeof data.ticket !== 'string'
     || !/^[0-9a-f-]{36}$/u.test(data.ticket) || typeof data.name !== 'string' || data.name.length > 200
-    || !Number.isSafeInteger(data.size) || data.size < 0 || data.size > 100 * 1024 ** 3 || downloads.size >= 16) {
+    || typeof data.size !== 'number' || !Number.isSafeInteger(data.size) || data.size < 0 || data.size > 100 * 1024 ** 3 || downloads.size >= 16) {
     port?.postMessage({type: 'cancel'});return true;
   }
-  const timer = setTimeout(() => {downloads.delete(data.ticket);port.postMessage({type: 'cancel'});port.close();}, 60000);
+  const ticket = data.ticket;
+  const timer = setTimeout(() => {downloads.delete(ticket);port.postMessage({type: 'cancel'});port.close();}, 60000);
   downloads.set(data.ticket, {port, name: data.name, size: data.size, owner: source.id, timer});
   port.postMessage({type: 'ready'});return true;
 }

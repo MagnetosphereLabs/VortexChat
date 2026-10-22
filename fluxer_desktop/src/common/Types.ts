@@ -302,6 +302,7 @@ export interface ElectronAPI {
 	getScreenRecordingPermissionStatus: () => Promise<InputMonitoringPermissionStatus>;
 	requestScreenRecordingPermission: () => Promise<InputMonitoringPermissionStatus>;
 	downloadFile: (url: string, defaultPath: string, sha256?: string | null) => Promise<DownloadFileResult>;
+	vortexDeviceKey(purpose: 'account' | 'local'): Promise<string>;
 	vortexDownloadStart: (name: string, size: number) => Promise<string | null>;
 	vortexDownloadChunk: (id: string, chunk: Uint8Array) => Promise<void>;
 	vortexDownloadFinish: (id: string) => Promise<void>;

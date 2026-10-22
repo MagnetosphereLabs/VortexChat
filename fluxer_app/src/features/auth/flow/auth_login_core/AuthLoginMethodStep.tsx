@@ -99,7 +99,7 @@ export function AuthLoginMethodStep({
 		),
 	});
 	const secondaryActions: Array<AuthLoginMethodAction> = [];
-	if (resolveShowPasskeyAction(showPasskeyOption, passkeyAvailableForInstance)) {
+	if (identifierField !== 'login' && resolveShowPasskeyAction(showPasskeyOption, passkeyAvailableForInstance)) {
 		secondaryActions.push({
 			disabled,
 			id: 'passkey',
@@ -111,7 +111,7 @@ export function AuthLoginMethodStep({
 			submitting: false,
 		});
 	}
-	if (showBrowserOption) {
+	if (identifierField !== 'login' && showBrowserOption) {
 		secondaryActions.push({
 			disabled,
 			id: 'browser',

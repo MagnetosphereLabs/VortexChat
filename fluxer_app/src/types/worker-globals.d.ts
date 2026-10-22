@@ -6,10 +6,13 @@ interface ExtendableEvent extends Event {
 
 interface ExtendableMessageEvent extends ExtendableEvent {
 	readonly data: unknown;
+	readonly source: Client | ServiceWorker | MessagePort | null;
+	readonly ports: ReadonlyArray<MessagePort>;
 }
 
 interface FetchEvent extends ExtendableEvent {
 	readonly request: Request;
+	readonly clientId: string;
 	respondWith(response: Response | PromiseLike<Response>): void;
 }
 

@@ -94,3 +94,29 @@ export function materializeMessages(state,room) {
   }
   return [...messages.values()];
 }
+
+// Call membership and ringing are signed, encrypted conversation events. The
+// short lease removes crashed clients without giving the relay their call state.
+export function callView(ids,state,room,now=Date.now()/1000) {
+  const active=new Map(),ringing=new Map(),members=new Set(room.meta.members);
+  for(const event of state.messages.get(room.id)||[]) {
+    if(event.at<now-90||event.at>now+30||event.payload?.type!=='call'||!members.has(event.sender))continue;
+    const call=event.payload,voice=call.voice;
+    if(voice&&typeof voice.connection_id==='string'&&voice.connection_id.length<=128) {
+      const id=event.sender+':'+voice.connection_id;
+      if(call.state==='ended')active.delete(id);
+      else if(['joined','updated'].includes(call.state)) {
+        active.set(id,{...voice,user_id:ids.get('user',event.sender),channel_id:ids.get('channel',room.id),
+          guild_id:room.space?ids.get('guild',room.space):null,mute:false,deaf:false,e2ee_capable:true});
+        ringing.delete(event.sender);
+      }
+    }
+    if(call.state==='ring'&&[...active.keys()].some(id=>id.startsWith(event.sender+':'))&&event.at>now-35)
+      for(const recipient of call.recipients||[])if(members.has(recipient)&&recipient!==event.sender)ringing.set(recipient,event.sender);
+    if(call.state==='stop-ringing')for(const recipient of call.recipients||[])
+      if(recipient===event.sender||ringing.get(recipient)===event.sender)ringing.delete(recipient);
+  }
+  if(!active.size)return null;
+  for(const voice of active.values())ringing.delete(ids.raw('user',voice.user_id));
+  return {channel_id:ids.get('channel',room.id),region:'auto',voice_states:[...active.values()],ringing:[...ringing.keys()].map(id=>ids.get('user',id))};
+}

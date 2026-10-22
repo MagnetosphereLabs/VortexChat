@@ -2,10 +2,11 @@
 import {getSession} from './Session.js';
 import {verifyNode} from './Rest.js';
 import {auth} from './vendor/auth.js';
-import {channelView,guildView,materializeMessages} from './Projection.js';
+import {channelView,guildView,materializeMessages,callView} from './Projection.js';
 
 export class VortexGateway {
   kind='browser';readyState=0;listeners=new Map();sequence=0;sessionId=crypto.randomUUID();seen=new Map();channels=new Map();guilds=new Map();relationships=new Map();voiceEvents=new Set();
+  presences=new Map();typing=new Map();calls=new Map();status='online';
   constructor(url){const parsed=new URL(url);parsed.protocol=parsed.protocol==='wss:'?'https:':'http:';this.origin=auth.origin(parsed.origin);}
   on(event,listener){let listeners=this.listeners.get(event);if(!listeners){listeners=new Set();this.listeners.set(event,listeners);}listeners.add(listener);return()=>listeners.delete(listener);}
   emit(event,detail){for(const listener of this.listeners.get(event)||[])listener({target:this,...detail});}
@@ -19,8 +20,9 @@ export class VortexGateway {
       if(packet.op===2||packet.op===6)await this.identify(packet.d);
       else if(packet.op===4)await this.voice(packet.d);
       else if(packet.op===3&&this.session){
-        await this.session.core.action('status',{status:packet.d.status||'online'});
-        await this.session.core.action('presence',{idle:packet.d.status==='idle',instance:this.sessionId,viewing:globalThis.document?.visibilityState!=='hidden'});
+        this.status=packet.d.status||'online';
+        await this.session.core.action('status',{status:this.status});
+        await this.heartbeat();
       }
       else if(packet.op===8&&this.session) {
         const ids=Array.isArray(packet.d.guild_id)?packet.d.guild_id:[packet.d.guild_id];
@@ -40,6 +42,7 @@ export class VortexGateway {
       this.dispatch(type,body);
     };
     this.session.listeners.add(this.onDispatch);
+    await this.heartbeat();await this.session.refresh();
     const ready=await this.session.ready(this.sessionId);
     for(const guild of ready.guilds)this.guilds.set(guild.id,guild);
     for(const channel of [...ready.private_channels,...ready.guilds.flatMap(g=>g.channels)])this.channels.set(channel.id,channel);
@@ -47,8 +50,18 @@ export class VortexGateway {
     // READY provides channels and read state; old messages are loaded by history requests.
     for(const room of this.session.core.state.rooms)for(const event of materializeMessages(this.session.core.state,room))this.seen.set(event.id,JSON.stringify({...event,reactions:[...event.reactions].map(([key,people])=>[key,[...people]])}));
     this.dispatch('READY',ready);
+    for(const presence of ready.presences)this.presences.set(presence.user.id,presence.status);
+    this.heartbeatTimer=setInterval(()=>{void this.heartbeat().catch(error=>this.fail(error));},20000);
     this.poll=setInterval(()=>{void this.refresh().catch(error=>this.fail(error));},5000);
     this.streamAbort=new AbortController();void this.stream(this.streamAbort.signal);
+  }
+  async heartbeat() {
+    if(!this.session||this.readyState!==1)return;
+    await this.session.core.action('presence',{idle:this.status==='idle',instance:this.sessionId,viewing:globalThis.document?.visibilityState!=='hidden'});
+    if(this.lastVoice) {
+      const room=this.session.room(this.lastVoice.channel_id);
+      if(room)await this.session.core.send({type:'call',state:'updated',voice:this.lastVoice},'call',room);
+    }
   }
   async stream(signal) {
     while(!signal.aborted&&this.readyState===1) {
@@ -67,6 +80,10 @@ export class VortexGateway {
     this.refreshing=true;
     try {
       await this.session.refresh();const {state}=this.session.core,ids=this.session.ids;
+      for(const user of state.users) {
+        const id=ids.get('user',user.id),status=user.status||'offline';
+        if(this.presences.get(id)!==status){this.dispatch('PRESENCE_UPDATE',{user:{id},status,activities:[]});this.presences.set(id,status);}
+      }
       const liveGuilds=new Set(),liveChannels=new Set();
       for(const space of state.spaces){const guild=guildView(ids,state,space);liveGuilds.add(guild.id);if(!this.guilds.has(guild.id))this.dispatch('GUILD_CREATE',guild);this.guilds.set(guild.id,guild);}
       for(const [id]of this.guilds)if(!liveGuilds.has(id)){this.dispatch('GUILD_DELETE',{id});this.guilds.delete(id);}
@@ -83,9 +100,16 @@ export class VortexGateway {
           if(event.deleted){if(prior)this.dispatch('MESSAGE_DELETE',{id:ids.get('message',event.id),channel_id:channel.id});}
           else this.dispatch(prior?'MESSAGE_UPDATE':'MESSAGE_CREATE',await this.session.message(room,event));
         }
-        for(const event of state.messages.get(room.id)||[])if(event.payload.type==='call'&&!this.voiceEvents.has(event.id)) {
-          this.voiceEvents.add(event.id);const call=event.payload;
-          if(call.voice&&event.at>Date.now()/1000-120)this.dispatch('VOICE_STATE_UPDATE',{...call.voice,user_id:ids.get('user',event.sender),channel_id:call.state==='ended'?null:channel.id,guild_id:channel.guild_id});
+        for(const user of room.meta.members) {
+          const key=room.id+':'+user,at=state.typing.get(key);
+          if(at&&at>Date.now()/1000-10&&this.typing.get(key)!==at){this.typing.set(key,at);this.dispatch('TYPING_START',{channel_id:channel.id,guild_id:channel.guild_id,user_id:ids.get('user',user),timestamp:at});}
+        }
+        const call=callView(ids,state,room),previous=this.calls.get(channel.id);
+        if(JSON.stringify(call)!==JSON.stringify(previous||null)) {
+          for(const voice of call?.voice_states||[])if(!(previous?.voice_states||[]).some(old=>JSON.stringify(old)===JSON.stringify(voice)))this.dispatch('VOICE_STATE_UPDATE',voice);
+          for(const voice of previous?.voice_states||[])if(!(call?.voice_states||[]).some(current=>current.user_id===voice.user_id&&current.connection_id===voice.connection_id))this.dispatch('VOICE_STATE_UPDATE',{...voice,channel_id:null});
+          if(!room.space){if(call)this.dispatch(previous?'CALL_UPDATE':'CALL_CREATE',call);else if(previous)this.dispatch('CALL_DELETE',{channel_id:channel.id});}
+          if(call)this.calls.set(channel.id,call);else this.calls.delete(channel.id);
         }
       }
       for(const [id,channel]of this.channels)if(!liveChannels.has(id)){this.dispatch('CHANNEL_DELETE',channel);this.channels.delete(id);}
@@ -103,6 +127,7 @@ export class VortexGateway {
       this.lastVoice=null;this.session.voice=null;return;
     }
     const room=this.session.room(request.channel_id);if(!room)throw new Error('Conversation unavailable');
+    if(this.lastVoice&&this.lastVoice.channel_id!==request.channel_id)await this.voice({channel_id:null});
     await core.withDeviceLock(()=>core.syncRoom(room));
     const connection=request.connection_id||(this.lastVoice?.channel_id===request.channel_id?this.lastVoice.connection_id:null)||crypto.randomUUID();
     const voice={guild_id:request.guild_id||null,channel_id:request.channel_id,connection_id:connection,session_id:this.sessionId,
@@ -121,6 +146,8 @@ export class VortexGateway {
     await core.send({type:'call',state:'joined',voice},'call',room);
   }
   fail(error){this.emit('error',{error});this.close(error?.status===401?4004:4000,'Encrypted session interrupted');}
-  close(code=1000,reason='Closed'){if(this.readyState===3)return;this.readyState=3;clearInterval(this.poll);this.streamAbort?.abort();this.unsubscribe?.();this.emit('close',{code,reason,wasClean:code===1000});}
+  close(code=1000,reason='Closed'){if(this.readyState===3)return;this.readyState=3;clearInterval(this.poll);clearInterval(this.heartbeatTimer);this.streamAbort?.abort();this.unsubscribe?.();
+    if(this.session){void this.voice({channel_id:null}).catch(()=>{});void this.session.core.action('presence',{instance:this.sessionId,leave:true}).catch(()=>{});}
+    this.emit('close',{code,reason,wasClean:code===1000});}
   dispose(){this.close();this.listeners.clear();}
 }
