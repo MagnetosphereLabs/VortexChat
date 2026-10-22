@@ -837,6 +837,10 @@ function runDesktopBuildStep(step) {
 	if (!env.WORKDIR && !env.GITHUB_WORKSPACE) {
 		env.WORKDIR = MONOREPO_ROOT;
 	}
+	if (env.FLUXER_CI_BIN && fs.existsSync(env.FLUXER_CI_BIN)) {
+		execFileSync(env.FLUXER_CI_BIN, ['build-desktop', '--step', step], {stdio: 'inherit', env});
+		return;
+	}
 	execFileSync(
 		'cargo',
 		[

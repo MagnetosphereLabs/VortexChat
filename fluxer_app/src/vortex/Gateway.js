@@ -4,10 +4,12 @@ import {verifyNode} from './Rest.js';
 import {auth} from './vendor/auth.js';
 import {channelView,guildView,materializeMessages,callView} from './Projection.js';
 import {mediaEndpoint} from './MediaEndpoint.js';
+import {memberListView} from './MemberList.js';
 
 export class VortexGateway {
   kind='browser';readyState=0;listeners=new Map();sequence=0;sessionId=crypto.randomUUID();seen=new Map();channels=new Map();guilds=new Map();relationships=new Map();voiceEvents=new Set();
   presences=new Map();typing=new Map();calls=new Map();status='online';
+  memberSubscriptions=new Map();memberSnapshots=new Map();
   constructor(url){const parsed=new URL(url);parsed.protocol=parsed.protocol==='wss:'?'https:':'http:';this.origin=auth.origin(parsed.origin);}
   on(event,listener){let listeners=this.listeners.get(event);if(!listeners){listeners=new Set();this.listeners.set(event,listeners);}listeners.add(listener);return()=>listeners.delete(listener);}
   emit(event,detail){for(const listener of this.listeners.get(event)||[])listener({target:this,...detail});}
@@ -26,8 +28,26 @@ export class VortexGateway {
         await this.heartbeat();
       }
       else if(packet.op===8&&this.session) {
-        const ids=Array.isArray(packet.d.guild_id)?packet.d.guild_id:[packet.d.guild_id];
+        const ids=packet.d.guild_ids||(Array.isArray(packet.d.guild_id)?packet.d.guild_id:[packet.d.guild_id]);
         for(const id of ids){const guild=this.guilds.get(id);if(guild)this.dispatch('GUILD_MEMBERS_CHUNK',{guild_id:id,members:guild.members,chunk_index:0,chunk_count:1,nonce:packet.d.nonce});}
+      }
+      else if(packet.op===14&&this.session) {
+        for(const [guild,subscription] of Object.entries(packet.d.subscriptions||{})) {
+          if(subscription.active===false)for(const [channel,value] of this.memberSubscriptions)if(value.guild===guild){this.memberSubscriptions.delete(channel);this.memberSnapshots.delete(channel);}
+          for(const [channel,ranges] of Object.entries(subscription.member_list_channels||{})) {
+            if(Array.isArray(ranges)&&ranges.length&&this.memberSubscriptions.size<256)this.memberSubscriptions.set(channel,{guild,ranges});
+            else {this.memberSubscriptions.delete(channel);this.memberSnapshots.delete(channel);}
+          }
+        }
+        this.publishMemberLists(true);
+      }
+      else if(packet.op===15&&this.session) {
+        const counts=[...this.guilds.values()].filter(guild=>(packet.d.guild_ids||[]).includes(guild.id)).map(guild=>({guild_id:guild.id,member_count:guild.member_count,online_count:guild.online_count}));
+        this.dispatch('GUILD_COUNTS_UPDATE',{counts});
+      }
+      else if(packet.op===16&&this.session) {
+        const counts=(packet.d.channel_ids||[]).slice(0,256).map(channel=>memberListView(this.session.ids,this.session.core.state,packet.d.guild_id,channel,[])).filter(Boolean).map(({guild_id,channel_id,member_count,online_count})=>({guild_id,channel_id,member_count,online_count}));
+        this.dispatch('CHANNEL_MEMBER_COUNTS_UPDATE',{counts});
       }
     }).catch(error=>this.fail(error));
   }
@@ -81,6 +101,14 @@ export class VortexGateway {
     if(!this.session||this.readyState!==1)return Promise.resolve();
     this.refreshing=this.refreshNow().finally(()=>{this.refreshing=undefined;});
     return this.refreshing;
+  }
+  publishMemberLists(force=false) {
+    for(const [channel,{guild,ranges}] of this.memberSubscriptions) {
+      const view=memberListView(this.session.ids,this.session.core.state,guild,channel,ranges);
+      if(!view)continue;
+      const snapshot=JSON.stringify(view);
+      if(force||this.memberSnapshots.get(channel)!==snapshot){this.memberSnapshots.set(channel,snapshot);this.dispatch('GUILD_MEMBER_LIST_UPDATE',view);}
+    }
   }
   async refreshNow() {
       await this.session.refresh();const {state}=this.session.core,ids=this.session.ids;
@@ -137,6 +165,7 @@ export class VortexGateway {
       const current=(await this.session.ready(this.sessionId)).relationships,newIds=new Set(current.map(r=>r.id));
       for(const relationship of current){if(JSON.stringify(this.relationships.get(relationship.id))!==JSON.stringify(relationship))this.dispatch('RELATIONSHIP_ADD',relationship);this.relationships.set(relationship.id,relationship);}
       for(const [id,relationship]of this.relationships)if(!newIds.has(id)){this.dispatch('RELATIONSHIP_REMOVE',relationship);this.relationships.delete(id);}
+      this.publishMemberLists();
   }
   async voice(request) {
     if(!this.session)return;

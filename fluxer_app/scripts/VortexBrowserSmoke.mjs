@@ -53,8 +53,11 @@ try {
       await page.locator('[data-flx="guild.add-guild-modal.guild-create-form.button.submit"]').click();
       const editor=page.locator('[data-channel-textarea][contenteditable="true"]').first();
       await editor.waitFor({timeout:60000});
+      await page.locator('[data-flx="channel.member-list-item.name"]').filter({hasText: 'browser.owner'}).first().waitFor({timeout:30000});
       const message='Private browser message '+name+' '+crypto.randomUUID();
-      await editor.fill(message);
+      await editor.click();
+      await editor.pressSequentially(message, {delay: 8});
+      assert.equal(await editor.innerText(), message);
       // The first visible bubble is optimistic. Reload only after the Node has
       // acknowledged the ciphertext, so this checks durable delivery.
       await Promise.all([

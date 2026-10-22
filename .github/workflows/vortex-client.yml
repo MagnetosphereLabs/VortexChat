@@ -3,6 +3,7 @@ on:
   push:
     branches: [main, 'vortex/**']
     tags: ['vortex-v*']
+    paths-ignore: ['README.md', 'docs/**', 'release-request.json']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -15,6 +16,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
+      FLUXER_CI_BIN: ${{ github.workspace }}/target/debug/fluxer-ci
       CARGO_INCREMENTAL: '0'
       CARGO_PROFILE_DEV_DEBUG: '0'
       NODE_OPTIONS: --max-old-space-size=6144
@@ -68,8 +70,32 @@ jobs:
         env:
           VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node
         run: pnpm --filter fluxer_app vortex:test
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        id: renderer-tools
+        with:
+          path: |
+            target/debug/fluxer-ci
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/wasm2es6js
+            packages/markdown_parser/rust/target
+            fluxer_app/rust/libfluxcore/target
+            fluxer_app/rust/libfluxwebp/target
+          key: vortex-renderer-tools-linux24-rust199-${{ hashFiles('Cargo.lock', 'tools/ci/**', 'packages/markdown_parser/rust/Cargo.lock', 'fluxer_app/rust/**/Cargo.lock') }}
       - name: Build encrypted web client
         run: pnpm --filter fluxer_app build
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        if: steps.renderer-tools.outputs.cache-hit != 'true'
+        with:
+          path: |
+            target/debug/fluxer-ci
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/wasm2es6js
+            packages/markdown_parser/rust/target
+            fluxer_app/rust/libfluxcore/target
+            fluxer_app/rust/libfluxwebp/target
+          key: ${{ steps.renderer-tools.outputs.cache-primary-key }}
       - name: Check client types
         id: types
         continue-on-error: true

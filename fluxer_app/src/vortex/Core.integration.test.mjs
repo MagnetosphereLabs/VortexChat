@@ -137,6 +137,9 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   const packets=[];gateway.on('message',event=>packets.push(JSON.parse(event.data)));gateway.start();await delay(0);
   await gateway.identify({token});
   assert.equal(packets.find(p=>p.t==='READY').d.user.id,me.id);
+  gateway.send(JSON.stringify({op:14,d:{subscriptions:{[guild.id]:{member_list_channels:{[channel]:[[0,99]]}}}}}));
+  await gateway.pending;
+  assert.ok(packets.some(packet=>packet.t==='GUILD_MEMBER_LIST_UPDATE'&&packet.d.channel_id===channel&&packet.d.ops[0].items.some(item=>item.member?.user.id===me.id)));
   await request('POST','/channels/'+channel+'/messages',{content:'Gateway event',nonce:'gateway-nonce'});
   assert.ok(packets.find(p=>p.t==='MESSAGE_CREATE'&&p.d.content==='Gateway event'));
   await request('DELETE','/channels/'+channel+'/messages/'+message.id);

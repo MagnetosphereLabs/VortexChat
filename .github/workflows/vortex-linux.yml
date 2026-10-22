@@ -73,10 +73,34 @@ jobs:
         run: python3 scripts/test-install-linux.py
       - name: Check desktop types
         run: pnpm --filter fluxer_desktop typecheck
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        id: renderer-tools
+        with:
+          path: |
+            target/debug/fluxer-ci
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/wasm2es6js
+            packages/markdown_parser/rust/target
+            fluxer_app/rust/libfluxcore/target
+            fluxer_app/rust/libfluxwebp/target
+          key: vortex-renderer-tools-linux22-rust199-${{ hashFiles('Cargo.lock', 'tools/ci/**', 'packages/markdown_parser/rust/Cargo.lock', 'fluxer_app/rust/**/Cargo.lock') }}
       - name: Build the bundled renderer
-        run: pnpm --filter fluxer_app build:desktop
+        run: pnpm --filter fluxer_desktop build --shared-assets
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        if: steps.renderer-tools.outputs.cache-hit != 'true'
+        with:
+          path: |
+            target/debug/fluxer-ci
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/wasm2es6js
+            packages/markdown_parser/rust/target
+            fluxer_app/rust/libfluxcore/target
+            fluxer_app/rust/libfluxwebp/target
+          key: ${{ steps.renderer-tools.outputs.cache-primary-key }}
       - name: Build native desktop integrations
-        run: pnpm --filter fluxer_desktop build
+        run: pnpm --filter fluxer_desktop build --use-shared-renderer
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         if: steps.native-cache.outputs.cache-hit != 'true'
         with:
@@ -127,6 +151,7 @@ jobs:
           sudo chown root:root fluxer_desktop/dist-electron/linux-unpacked/chrome-sandbox
           sudo chmod 4755 fluxer_desktop/dist-electron/linux-unpacked/chrome-sandbox
       - name: Test packaged Linux app
+        timeout-minutes: 6
         env:
           VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node
           VORTEX_DESKTOP_BINARY: ${{ github.workspace }}/fluxer_desktop/dist-electron/linux-unpacked/vortex-chat
