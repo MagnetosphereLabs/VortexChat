@@ -2,6 +2,7 @@
 import 'fake-indexeddb/auto';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {createHash} from 'node:crypto';
 import {spawn, spawnSync} from 'node:child_process';
 import {mkdtemp, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -13,6 +14,16 @@ import {createVortexCore} from './Core.js';
 import {vortexRequest} from './Rest.js';
 import {getSession} from './Session.js';
 import {VortexGateway} from './Gateway.js';
+
+// The WASM store contains unordered maps. Compare their canonical digest so a
+// reload cannot fail this check merely by reordering entries, and so an assertion
+// failure never prints cryptographic material into build logs.
+function ratchetDigest(engine) {
+  const snapshot=JSON.parse(engine.snapshot());
+  snapshot.groups.sort();
+  snapshot.store.sort(([left],[right])=>left<right?-1:left>right?1:0);
+  return createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
+}
 
 test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', {timeout:120000}, async t=>{
   const cleanup=[];
@@ -103,10 +114,10 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   assert.equal((await request('GET','/premium/state')).body.effective.is_premium,true);
   await request('POST','/users/@me/saved-messages',{channel_id:channel,message_id:message.id});
   assert.equal((await request('GET','/users/@me/saved-messages')).body[0].message.content,'Edited locally');
-  const ratchetBeforeSearch=client.core.state.engine.snapshot();
+  const ratchetBeforeSearch=ratchetDigest(client.core.state.engine);
   const search=(await request('POST','/search/messages',{context_guild_id:guild.id,content:'Edited',has:[],page:1})).body;
   assert.equal(search.total,1);assert.equal(search.messages[0].id,message.id);
-  assert.deepEqual(client.core.state.engine.snapshot(),ratchetBeforeSearch,'Archive search must not consume the live ratchet');
+  assert.equal(ratchetDigest(client.core.state.engine),ratchetBeforeSearch,'Archive search must not consume the live ratchet');
   assert.equal((await request('POST','/search/messages',{context_guild_id:guild.id,content:'absent'})).body.total,0);
   assert.equal((await request('GET','/channels/'+channel+'/messages/'+message.id+'/reactions/'+encodeURIComponent('❤️'))).body[0].id,me.id);
   await request('DELETE','/users/@me/saved-messages/'+message.id);
