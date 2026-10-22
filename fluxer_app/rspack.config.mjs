@@ -659,6 +659,18 @@ export default () => {
 			}),
 			new CopyRspackPlugin({
 				patterns: [
+					...['avatars', 'badges', 'emoji', 'web'].map(directory => ({
+						from: path.join(MONOREPO_ROOT, 'fluxer_static', directory),
+						to: path.join(DIST_DIR, 'vortex', 'assets', directory),
+					})),
+					{
+						from: path.join(MONOREPO_ROOT, 'fluxer_static', 'LICENSE'),
+						to: path.join(DIST_DIR, 'vortex', 'assets', 'LICENSE.txt'),
+					},
+					{
+						from: path.join(MONOREPO_ROOT, 'fluxer_static', 'THIRD_PARTY_LICENSES.md'),
+						to: path.join(DIST_DIR, 'vortex', 'assets', 'THIRD_PARTY_LICENSES.txt'),
+					},
 					{
 						from: PUBLIC_DIR,
 						to: DIST_DIR,

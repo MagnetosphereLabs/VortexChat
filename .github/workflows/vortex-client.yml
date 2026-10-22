@@ -9,7 +9,7 @@ permissions:
   contents: read
 concurrency:
   group: vortex-client-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   web:
     runs-on: ubuntu-24.04
@@ -44,7 +44,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: MagnetosphereLabs/VortexNode
-          ref: 251b151da0815b3d698caf906dfb6cbcacea8631
+          ref: 42fbb885876e6677a245b1afddc4938ebce22cf1
           path: node-server
           persist-credentials: false
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -68,10 +68,12 @@ jobs:
           VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node
         run: pnpm --filter fluxer_app vortex:test
       - name: Install browser test engines
+        timeout-minutes: 8
         run: |
           npm install --prefix .vortex-tools --no-audit --no-fund playwright@1.58.2
           .vortex-tools/node_modules/.bin/playwright install --with-deps chromium firefox webkit
       - name: Test browser sign-in and session restore
+        timeout-minutes: 8
         env:
           VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node
           VORTEX_PLAYWRIGHT_MODULE: ${{ github.workspace }}/.vortex-tools/node_modules/playwright/index.mjs
