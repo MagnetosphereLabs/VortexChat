@@ -49,12 +49,28 @@ jobs:
         with:
           path: target/debug/fluxer-ci
           key: ${{ steps.ci-cache.outputs.cache-primary-key }}
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        id: native-cache
+        with:
+          path: |
+            fluxer_desktop/native/*/target
+            ~/.cargo/registry
+          key: vortex-native-linux22-rust199-${{ hashFiles('fluxer_desktop/native/**/Cargo.lock', 'fluxer_desktop/native/**/Cargo.toml') }}
       - name: Verify encrypted desktop database
         run: cargo test --locked --manifest-path fluxer_desktop/native/app-store/Cargo.toml
+      - name: Check desktop types
+        run: pnpm --filter fluxer_desktop typecheck
       - name: Build the bundled renderer
         run: pnpm --filter fluxer_app build:desktop
       - name: Build native desktop integrations
         run: pnpm --filter fluxer_desktop build
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            fluxer_desktop/native/*/target
+            ~/.cargo/registry
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - name: Fetch pinned patched Electron runtime
         run: |
           mkdir electron-runtime
@@ -68,12 +84,55 @@ jobs:
       - name: Package AppImage
         working-directory: fluxer_desktop
         run: pnpm exec electron-builder --linux AppImage --x64 --config electron-builder.config.cjs --config.extraMetadata.version=0.1.0 --publish never
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MagnetosphereLabs/VortexNode
+          ref: 42fbb885876e6677a245b1afddc4938ebce22cf1
+          path: node-server
+          persist-credentials: false
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            node-server/target
+            ~/.cargo/registry
+          key: vortex-node-linux22-rust199-${{ hashFiles('node-server/Cargo.lock') }}
+      - name: Build matching test Node
+        run: cargo build --locked --manifest-path node-server/Cargo.toml
+      - name: Install desktop test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes xvfb gnome-keyring dbus-x11
+          npm install --prefix .vortex-tools --no-audit --no-fund playwright@1.58.2
+          sudo chown root:root fluxer_desktop/dist-electron/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 fluxer_desktop/dist-electron/linux-unpacked/chrome-sandbox
+      - name: Test packaged Linux app
+        env:
+          VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node
+          VORTEX_DESKTOP_BINARY: ${{ github.workspace }}/fluxer_desktop/dist-electron/linux-unpacked/vortex-chat
+          VORTEX_PLAYWRIGHT_MODULE: ${{ github.workspace }}/.vortex-tools/node_modules/playwright/index.mjs
+        run: |
+          dbus-run-session -- bash -c '
+            printf %s ci-test-keyring | gnome-keyring-daemon --unlock --components=secrets
+            xvfb-run -a node fluxer_app/scripts/VortexDesktopSmoke.mjs
+          '
+      - name: Upload desktop diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vortex-desktop-results
+          path: desktop-results
+          retention-days: 7
+      - name: Archive installable Linux application
+        run: tar --dereference -C fluxer_desktop/dist-electron/linux-unpacked -czf vortex-chat-linux-x64.tar.gz .
       - name: Hash Linux artifacts
-        run: find fluxer_desktop -maxdepth 3 -name '*.AppImage' -exec sha256sum {} + > Linux-SHA256SUMS
+        run: |
+          find fluxer_desktop -maxdepth 3 -name '*.AppImage' -exec sha256sum {} + > Linux-SHA256SUMS
+          sha256sum vortex-chat-linux-x64.tar.gz >> Linux-SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: vortex-chat-linux-x64
           path: |
             fluxer_desktop/**/*.AppImage
             Linux-SHA256SUMS
+            vortex-chat-linux-x64.tar.gz
           retention-days: 14
