@@ -11,6 +11,7 @@ import type {MessageDescriptor} from '@lingui/core';
 export type SectionKeyword = MessageDescriptor | string | (() => string);
 
 export type UserSettingsTabType =
+	| 'vortex_node'
 	| 'my_profile'
 	| 'account_security'
 	| 'plutonium'

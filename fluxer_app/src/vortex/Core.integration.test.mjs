@@ -15,6 +15,7 @@ import {getSession} from './Session.js';
 import {VortexGateway} from './Gateway.js';
 
 test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', {timeout:120000}, async t=>{
+  const cleanup=[];
   assert.ok(process.env.VORTEX_NODE_BINARY,'Set VORTEX_NODE_BINARY to the compiled Node binary');
   const binary=resolve(process.env.VORTEX_NODE_BINARY);
   const dir=await mkdtemp(join(tmpdir(),'vortex-integration-'));
@@ -28,7 +29,16 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   await writeFile(config,JSON.stringify({listen:`127.0.0.1:${port}`,data_dir:dir,vault_html:join(dir,'unused.html'),node_id:auth.b64(auth.random()),bridge:auth.b64(auth.random()),reserve_bytes:0,vault_enabled:false,public_url:url}));
   const nodeProcess=spawn(binary,['serve','--config',config],{env:{...globalThis.process.env,VORTEX_TEST:'1'},stdio:['ignore','pipe','pipe']});
   let stderr='';nodeProcess.stderr.on('data',data=>{stderr+=data;});
-  t.after(async()=>{nodeProcess.kill('SIGTERM');await new Promise(r=>nodeProcess.once('exit',r));await rm(dir,{recursive:true,force:true});});
+  t.after(async()=>{
+    for(const close of cleanup.reverse())await close();
+    if(nodeProcess.exitCode===null){
+      const exited=new Promise(r=>nodeProcess.once('exit',r));
+      nodeProcess.kill('SIGTERM');
+      const deadline=setTimeout(()=>nodeProcess.kill('SIGKILL'),2000);
+      await exited;clearTimeout(deadline);
+    }
+    await rm(dir,{recursive:true,force:true});
+  });
   for(let i=0;i<100;i++){try{if((await fetch(url+'/health')).ok)break;}catch{}await delay(50);}
   assert.equal((await fetch(url+'/health')).status,200,stderr);
   const owner=await auth.login({url,username:'node.owner',password});
@@ -36,11 +46,11 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   await auth.register({url,username:'alice.test',password});
   const alicePair=await auth.login({url,username:'alice.test',password});
   const alice=createVortexCore({notice:message=>{throw new Error(message);}});
-  await alice.connect(alicePair,await auth.restoreRoot(alicePair));t.after(()=>alice.close());
+  await alice.connect(alicePair,await auth.restoreRoot(alicePair));cleanup.push(()=>alice.close());
   await auth.register({url,username:'bob.testxx',password});
   const bobPair=await auth.login({url,username:'bob.testxx',password});
   const bob=createVortexCore({notice:message=>{if(!message.startsWith('Uploading'))throw new Error(message);}});
-  await bob.connect(bobPair,await auth.restoreRoot(bobPair));t.after(()=>bob.close());
+  await bob.connect(bobPair,await auth.restoreRoot(bobPair));cleanup.push(()=>bob.close());
   await alice.sync();
   const space=(await alice.action('space.create',{sealed:auth.b64(auth.random(64))})).id;
   const room=await alice.createRoom('text',{space,spaceName:'Private Space',name:'private',members:[bobPair.id],background:true});
@@ -70,7 +80,7 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   alice.close();bob.close();
   const login=await vortexRequest(url,'POST','/auth/login',{body:{login:'alice.test',password}});
   const token=login.body.token;
-  const client=await getSession(token,url);t.after(()=>client.close());
+  const client=await getSession(token,url);cleanup.push(()=>client.close());
   const request=(method,path,body)=>vortexRequest(url,method,path,{body},token);
   const discovery=await (await fetch(url+'/.well-known/fluxer')).json();
   assert.equal(discovery.endpoints.api,url+'/vortex/api');
@@ -89,7 +99,7 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   await request('PUT','/channels/'+channel+'/messages/'+message.id+'/reactions/'+encodeURIComponent('❤️')+'/@me');
   assert.equal((await request('GET','/channels/'+channel+'/messages')).body[0].reactions[0].count,1);
   const gateway=new VortexGateway(url.replace('http:','ws:')+'/vortex/gateway');
-  t.after(()=>gateway.dispose());
+  cleanup.push(()=>gateway.dispose());
   const packets=[];gateway.on('message',event=>packets.push(JSON.parse(event.data)));gateway.start();await delay(0);
   await gateway.identify({token});
   assert.equal(packets.find(p=>p.t==='READY').d.user.id,me.id);
@@ -98,5 +108,29 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   await request('DELETE','/channels/'+channel+'/messages/'+message.id);
   assert.ok(!(await request('GET','/channels/'+channel+'/messages')).body.find(m=>m.id===message.id));
   await assert.rejects(request('POST','https://unrelated.invalid/auth/login',{password}));
+
+  // Targeted Space invitations reveal their title and keys only to the invitee.
+  const bobLogin=await vortexRequest(url,'POST','/auth/login',{body:{login:'bob.testxx',password}});
+  const bobClient=await getSession(bobLogin.body.token,url);cleanup.push(()=>bobClient.close());
+  await client.refresh();
+  const newSpace=client.ids.raw('guild',guild.id);
+  const invitation=await client.core.inviteSpace(newSpace,bobPair.id);
+  const invitationWire=await bobClient.core.action('space.invites');
+  assert.equal(JSON.stringify(invitationWire).includes('Encrypted UI Space'),false);
+  assert.equal((await bobClient.core.invitations())[0].name,'Encrypted UI Space');
+  await bobClient.core.respondInvitation(invitation,true);
+  await client.refresh();await bobClient.refresh();
+  const newRoom=client.room(channel);
+  await client.core.send({type:'message',text:'After accepting an encrypted invitation'},'message',newRoom);
+  await bobClient.refresh();
+  assert.ok(bobClient.core.state.messages.get(newRoom.id).some(event=>event.payload.text==='After accepting an encrypted invitation'));
+  await client.core.action('space.member',{space:newSpace,user:bobPair.id,banned:true,permissions:0});
+  await assert.rejects(bobClient.core.action('events',{room:newRoom.id,after:0}));
+  await client.core.send({type:'message',text:'After Space ban'},'message',newRoom);
+  assert.equal(client.core.command('members',newRoom.id).members.length,1);
+
+  // Disabling an account also revokes its active authentication token.
+  await auth.api(url,'admin.user',{user:bobPair.id,disabled:true,quota:1024},owner.token);
+  await assert.rejects(bobClient.core.action('me'));
 
 });

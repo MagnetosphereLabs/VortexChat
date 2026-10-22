@@ -1,0 +1,10 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+.form { display: grid; gap: 1.25rem; max-width: 38rem; margin-top: 1.25rem; }
+.field { display: grid; gap: 0.5rem; font-weight: 500; }
+.field input, .field select { border: 1px solid var(--background-modifier-accent); border-radius: 0.5rem; padding: 0.75rem; background: var(--background-secondary); color: var(--text-primary); font: inherit; min-width: 0; }
+.field input:focus, .field select:focus { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+.row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin: 0.5rem 0; }
+.row input { accent-color: var(--brand-primary); }
+.account { display: grid; gap: 0.75rem; padding: 1.25rem; border: 1px solid var(--background-modifier-accent); border-radius: 0.75rem; margin-bottom: 1rem; }
+.origin { font-family: monospace; overflow-wrap: anywhere; }
+.link { color: var(--text-link); text-decoration: underline; }

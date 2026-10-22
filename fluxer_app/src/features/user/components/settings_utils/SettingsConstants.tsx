@@ -142,6 +142,7 @@ export function getCategoryLabel(category: UserSettingsTabCategories): React.Rea
 }
 
 const ALL_TABS_DESCRIPTORS: Array<SettingsTabDescriptor> = [
+	{type: 'vortex_node', category: 'user_settings', label: 'Vortex Node', icon: ShieldIcon},
 	{
 		type: 'my_profile',
 		category: 'user_settings',

@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: MagnetosphereLabs/VortexNode
-          ref: e5af59ab9209cc45a25b2dae0220d4cd102ea132
+          ref: 7cb5c82160255feaecf5e47d6500a111381838a8
           path: node-server
           persist-credentials: false
       - name: Build the matching Node

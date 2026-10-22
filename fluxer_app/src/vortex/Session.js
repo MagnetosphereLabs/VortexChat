@@ -102,7 +102,7 @@ export async function login(origin,body) {
   return {token:pair.token,user_id:session.currentUser().id,user:session.currentUser()};
 }
 export async function register(origin,body) {
-  await auth.register({url:origin,username:body.username,password:body.password,invite:body.invite_code||''});
+  await auth.register({url:origin,username:body.username,password:body.password,invite:body.invite_code||new URL(globalThis.location?.href||origin).searchParams.get('invite')||''});
   return login(origin,body);
 }
 export async function logout(token,origin) {

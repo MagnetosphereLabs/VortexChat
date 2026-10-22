@@ -30,7 +30,7 @@ async function send(t, A = "message", room = activeRoom()) {
   if (replying && !t.reply) t.reply = replying.id;
   if (t.type === "delete") {
     const target = (state.messages.get(room?.id) || []).find(item => item.id === t.target);
-    if (!target || target.sender !== state.me.id && !state.me.owner) throw Error("You can only delete your own messages.");
+    if (!target || target.sender !== state.me.id && room?.creator !== state.me.id && !(room?.moderators || []).includes(state.me.id)) throw Error("You can only delete your own messages.");
   }
   let e = room;
   if (!e) throw Error("Choose a conversation");
@@ -424,6 +424,9 @@ async function processEvent(t, A) {
   state.cursors[t.id] = A.seq;
 }
 async function verifiedOperation(t, A, e) {
+  const prior = command('has', t.id).has
+    ? new Map(command('members', t.id).members.map(member => [member.identity, member.key]))
+    : new Map();
   let i = new ae(state.me.id + ":" + state.device, state.engine.snapshot());
   try {
     let n = JSON.parse(i.command(JSON.stringify({
@@ -431,12 +434,12 @@ async function verifiedOperation(t, A, e) {
       room: t.id,
       ...e
     })));
-    return await verifyRoster(t, i), state.engine.free(), state.engine = i, n;
+    return await verifyRoster(t, i, prior), state.engine.free(), state.engine = i, n;
   } catch (n) {
     throw i.free(), n;
   }
 }
-async function verifyRoster(t, A) {
+async function verifyRoster(t, A, prior = new Map()) {
   let e = new Set(t.meta.members || []);
   if (JSON.parse(A.command(JSON.stringify({
     op: "members",
@@ -460,6 +463,10 @@ async function verifyRoster(t, A) {
       room: t.id
     }))).members;
   for (let a of o) {
+    // Sequential MLS removals may temporarily retain another revoked device.
+    // Its exact credential was verified in the previous authenticated state.
+    // New identities and changed keys still require current authorization.
+    if (prior.get(a.identity) === a.key) continue;
     let s = dec.decode(un64(a.identity)),
       r = s.indexOf(":"),
       g = s.slice(0, r),
@@ -502,7 +509,8 @@ async function publishCommit(t, A, e, i = {}, n = "") {
   }
 }
 async function pruneDeletedMembers(room) {
-  const deleted = command('members', room.id).members.filter(member => userById(dec.decode(un64(member.identity)).split(':')[0]).deleted).sort((a, b) => b.index - a.index);
+  const allowed = new Set((await action('room.members', {room: room.id})).members.map(member => member.user));
+  const deleted = command('members', room.id).members.filter(member => !allowed.has(dec.decode(un64(member.identity)).split(':')[0])).sort((a, b) => b.index - a.index);
   for (const member of deleted) {
     const snapshot = state.engine.snapshot(),
       commit = command('remove', room.id, {
@@ -526,7 +534,9 @@ async function rotateArchive(t) {
   let A = (await action("room.members", {
     room: t.id
   })).members.map(r => r.user);
-  t.meta.members = t.meta.members.filter(r => A.includes(r) || r === t.creator && userById(r).deleted);
+  // Retain the original creator identifier as a provenance pin, even when their
+  // account is disabled. Only active room members receive the new key boxes.
+  t.meta.members = t.meta.members.filter(r => A.includes(r) || r === t.creator);
   let e = await roomKeys(t),
     i = random(32),
     n = {
@@ -713,7 +723,7 @@ async function removeMembers(t, A) {
   t = state.rooms.find(current => current.id === t.id) || t;
   const removed = new Set(Array.isArray(A) ? A : [A]);
   return withDeviceLock(async () => {
-    await syncRoom(t);
+    await syncRoom(t, false);
     let e = command("members", t.id).members.filter(i => removed.has(dec.decode(un64(i.identity)).split(":")[0])).sort((i, n) => n.index - i.index);
     for (let i of e) {
       let n = state.engine.snapshot(),
@@ -864,6 +874,62 @@ async function download(file) {
   if(result.size!==file.size) throw new Error('Attachment size mismatch');
   return result;
 }
+function invitationSignature(id, space, user, rooms, label) {
+  return JSON.stringify({id,space,user,rooms:rooms.map(item=>({room:item.room,creator:item.creator,base:item.base,box:item.box,sealed:item.sealed})),label});
+}
+async function openInvitationBox(box, id, sender) {
+  const envelope=JSON.parse(dec.decode(un64(box))),payload=JSON.parse(envelope.payload);
+  if(payload.room!==id||payload.from!==sender)throw new Error('Invitation identity mismatch');
+  await verifyIdentity(userById(sender));await verifySignature(sender,envelope.payload,envelope.signature);
+  const remote=await crypto.subtle.importKey('raw',un64(userById(sender).identity.exchange),{name:'ECDH',namedCurve:'P-256'},false,[]);
+  const local=await crypto.subtle.importKey('pkcs8',un64(state.root.exchange),{name:'ECDH',namedCurve:'P-256'},false,['deriveBits']);
+  const secret=new Uint8Array(await crypto.subtle.deriveBits({name:'ECDH',public:remote},local,256));
+  return open(await hkdf(secret,'room-key:'+id),un64(payload.data),id);
+}
+async function inviteSpace(space, user) {
+  const channels=state.rooms.filter(room=>room.space===space);
+  if(!channels.length)throw new Error('Create a channel before inviting someone');
+  const id=b64(random()),rooms=[];
+  for(const room of channels) {
+    const keys=await roomKeys(room),meta={...room.meta,members:[...new Set([...room.meta.members,user])]};
+    rooms.push({room:room.id,creator:room.creator,base:room.sealed,box:await wrapKey(user,enc.encode(JSON.stringify(keys.bundle)),room.id),sealed:b64(await seal(keys.key,enc.encode(JSON.stringify(meta)),room.id))});
+  }
+  const label=await wrapKey(user,enc.encode(JSON.stringify({name:channels[0].meta.spaceName||'Space'})),id),body={rooms,label};
+  body.signature=await sign(invitationSignature(id,space,user,rooms,label));
+  await action('space.invite',{id,space,user,body});return id;
+}
+async function invitations() {
+  const values=(await action('space.invites')).invites;
+  const result=[];
+  for(const item of values) {
+    if(item.recipient!==state.me.id||item.status!=='pending'||item.created<Date.now()/1000-7*86400)continue;
+    await verifySignature(item.sender,invitationSignature(item.id,item.space,item.recipient,item.body.rooms,item.body.label),item.body.signature);
+    const label=JSON.parse(dec.decode(await openInvitationBox(item.body.label,item.id,item.sender)));
+    result.push({...item,name:label.name});
+  }
+  return result;
+}
+async function respondInvitation(id,accept) {
+  const item=(await invitations()).find(item=>item.id===id);if(!item)throw new Error('Invitation unavailable');
+  const pins={};
+  if(accept)for(const channel of item.body.rooms) {
+    const bytes=await openInvitationBox(channel.box,channel.room,item.sender);
+    const bundle=bytes.length===32?{active:b64(bytes)}:JSON.parse(dec.decode(bytes));
+    const key=await hkdf(un64(bundle.active),'archive:'+channel.room);
+    const meta=JSON.parse(dec.decode(await open(key,un64(channel.sealed),channel.room)));
+    if(!Array.isArray(meta.members)||!meta.members.includes(state.me.id)||!meta.members.includes(item.sender)||!meta.members.includes(channel.creator))throw new Error('Invalid invitation membership');
+    pins[channel.room]={creator:channel.creator,members:meta.members};
+  }
+  await action('space.invite.respond',{id,accept});
+  if(accept){state.prefs.conversations??={};Object.assign(state.prefs.conversations,pins);await savePreferences();await sync();}
+}
+async function updateMetadata(room,patch) {
+  const allowed=['name','topic','position','spaceName'];
+  const meta={...room.meta};for(const key of allowed)if(patch[key]!==undefined)meta[key]=patch[key];
+  const keys=await roomKeys(room);
+  await action('room.metadata',{room:room.id,sealed:b64(await seal(keys.key,enc.encode(JSON.stringify(meta)),room.id))});
+  room.meta=meta;await refreshRooms();
+}
 async function mediaKey(room) {
   const key=un64(command('export',room.id).key);
   const material=await crypto.subtle.importKey('raw',key,'HKDF',false,['deriveBits']);
@@ -876,5 +942,5 @@ function close() {
   state.keys.clear();state.messages.clear();
 }
 return {state,connect,sync,close,send,createRoom,removeMembers,upload,download,loadHistory,
-  action,roomKeys,wrapKey,sign,verifySignature,savePreferences,withDeviceLock,syncRoom,mediaKey,command};
+  action,roomKeys,wrapKey,sign,verifySignature,savePreferences,withDeviceLock,syncRoom,mediaKey,command,inviteSpace,invitations,respondInvitation,updateMetadata};
 }

@@ -116,6 +116,7 @@ export async function vortexRequest(origin,method,path,options={},token) {
       if(suffix==='/messages'&&method==='GET')data=await session.messages(room,query);
       else if(suffix==='/messages'&&method==='POST')data=await sendMessage(session,room,body,files);
       else if(suffix===''&&method==='GET')data=channelView(ids,state,room);
+      else if(suffix===''&&method==='PATCH'){await core.updateMetadata(room,{name:body.name,topic:body.topic,position:body.position});data=channelView(ids,state,session.room(match[1]));session.emit('CHANNEL_UPDATE',data);}
       else if(suffix===''&&method==='DELETE') {await core.action('room.delete',{room:room.id});session.emit('CHANNEL_DELETE',channelView(ids,state,room));await session.refresh();status=204;}
       else if(suffix==='/typing'&&method==='POST'){await core.send({type:'typing'},'typing',room);status=204;}
       else if(suffix==='/pins'&&method==='GET')data=await Promise.all(materializeMessages(state,room).filter(e=>e.pinned&&!e.deleted).map(e=>session.message(room,e)));
@@ -141,9 +142,18 @@ export async function vortexRequest(origin,method,path,options={},token) {
         }
       }
     } else if(route==='/users/@me/guilds'&&method==='GET')data=state.spaces.map(space=>guildView(ids,state,space).properties);
-    else if(route==='/vortex/node'&&method==='GET')data=await core.action('me');
+    else if(route==='/vortex/node'&&method==='GET')data={...await core.action('me'),applications:(await verifyNode(origin)).applications};
     else if(route==='/vortex/node'&&method==='PATCH'){await core.action('policy',body);state.me=await core.action('me');data=state.me.policy;}
     else if(route==='/vortex/users'&&method==='GET')data=await core.action('admin.users');
+    else if(route==='/vortex/users'&&method==='PATCH'){await core.action('admin.user',body);status=204;}
+    else if(route==='/vortex/invite'&&method==='POST')data=await core.action('invite',body);
+    else if(route==='/vortex/spaces'&&method==='GET')data=state.spaces.map(space=>({id:space.id,name:state.rooms.find(r=>r.space===space.id)?.meta.spaceName||'Space',canInvite:space.creator===state.me.id||!!(space.permissions&2)}));
+    else if(route==='/vortex/space-invites'&&method==='GET')data=(await core.invitations()).map(item=>({id:item.id,name:item.name,sender:state.users.find(u=>u.id===item.sender)?.username,channels:item.body.rooms.length}));
+    else if(route==='/vortex/space-invites'&&method==='POST'){
+      const target=state.users.find(user=>user.username===body.username);if(!target)throw new Error('No account has that username on this Node');
+      data={id:await core.inviteSpace(body.space,target.id)};
+    }
+    else if(route==='/vortex/space-invites'&&method==='PATCH'){await core.respondInvitation(body.id,body.accept===true);await session.refresh();status=204;}
     else if(route==='/vortex/storage'&&method==='GET')data=await core.action('admin.storage');
     else if(route==='/users/@me/notes'&&method==='GET')data=state.prefs.notes||{};
     else if((match=route.match(/^\/users\/@me\/notes\/(\d+)$/u))&&method==='PUT'){state.prefs.notes??={};state.prefs.notes[match[1]]=body.note;await core.savePreferences();status=204;}
