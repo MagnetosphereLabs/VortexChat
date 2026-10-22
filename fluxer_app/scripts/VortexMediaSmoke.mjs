@@ -66,7 +66,7 @@ try {
   start(binary, ['serve', '--config', config]);
   await waitFor(async () => {try {return (await fetch(origin + '/health')).ok;} catch {return false;}}, 'Node did not start');
   const owner = await auth.login({url: origin, username: 'media.owner', password});
-  await auth.api(origin, 'policy', {signupUntil: Math.floor(Date.now()/1000) + 600, createSpaces: 'everyone', chatQuota: 0}, owner.token);
+  await auth.api(origin, 'policy', {title: 'Encrypted media test', signupUntil: Math.floor(Date.now()/1000) + 600, createSpaces: 'everyone', chatQuota: 0}, owner.token);
   for (const username of ['media.alice', 'media.bobxx']) {
     await auth.register({url: origin, username, password});
     const pair = await auth.login({url: origin, username, password});
@@ -110,7 +110,8 @@ try {
 } catch (error) {
   // Relay credentials and participant JWTs must never appear in diagnostics.
   console.error(diagnostics.replaceAll(relaySecret, '[redacted]').split('\n').filter(line => !/token|authorization/i.test(line)).join('\n'));
-  throw error;
+  console.error(error instanceof Error ? error.stack : String(error));
+  process.exitCode = 1;
 } finally {
   for (const browser of browsers) await browser.close();
   for (const core of clients) core.close();

@@ -54,7 +54,16 @@ try {
       const editor=page.locator('[data-channel-textarea][contenteditable="true"]').first();
       await editor.waitFor({timeout:60000});
       const message='Private browser message '+name+' '+crypto.randomUUID();
-      await editor.fill(message);await editor.press('Enter');
+      await editor.fill(message);
+      // The first visible bubble is optimistic. Reload only after the Node has
+      // acknowledged the ciphertext, so this checks durable delivery.
+      await Promise.all([
+        page.waitForResponse(response=>{
+          if(response.url()!==origin+'/chat/action'||response.status()!==200)return false;
+          try{const body=response.request().postDataJSON();return body.action==='event'&&body.kind==='message';}catch{return false;}
+        },{timeout:30000}),
+        editor.press('Enter'),
+      ]);
       await page.getByText(message,{exact:true}).first().waitFor({timeout:30000});
       await page.reload({waitUntil:'domcontentloaded'});
       await page.getByText(message,{exact:true}).first().waitFor({timeout:60000});
