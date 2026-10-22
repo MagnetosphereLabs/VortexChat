@@ -1,0 +1,155 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import {auth} from './vendor/auth.js';
+import {getSession,login,register,logout} from './Session.js';
+import {channelView,guildView,userView,materializeMessages} from './Projection.js';
+
+export function vortexOrigin(endpoint) {
+  if(!endpoint)return null;
+  try {const url=new URL(endpoint);return url.pathname.replace(/\/$/u,'')==='/vortex/api'?auth.origin(url.origin):null;}catch{return null;}
+}
+const capabilities=new Map();
+export async function verifyNode(origin) {
+  let pending=capabilities.get(origin);
+  if(!pending) {
+    pending=(async()=>{
+      const response=await fetch(origin+'/.well-known/vortex',{cache:'no-store',signal:AbortSignal.timeout(15000)});
+      if(!response.ok)throw new Error('This server does not support Vortex encryption');
+      const data=await response.json();
+      if(data.protocol!=='vortex-chat'||data.version!==1||data.authentication!=='opaque-v1'||data.conversations!=='mls-archive-v1')throw new Error('Unsupported Vortex encryption protocol');
+      return data;
+    })();capabilities.set(origin,pending);pending.catch(()=>capabilities.delete(origin));
+  }
+  return pending;
+}
+function unsupported(path){throw Object.assign(new Error('This operation is not available on this Vortex Node client yet'),{status:501,code:'VORTEX_UNSUPPORTED_OPERATION'});}
+const activeSends=new Map();
+async function sendMessage(session,room,body,files) {
+  const key=session.pair.url+':'+session.pair.id+':'+room.id+':'+body.nonce;
+  if(body.nonce&&activeSends.has(key))return activeSends.get(key);
+  const operation=(async()=>{
+    await session.refresh();
+    let prior=body.nonce&&materializeMessages(session.core.state,room).find(event=>event.sender===session.pair.id&&event.payload.nonce===body.nonce);
+    if(prior)return session.message(room,prior);
+    if(body.sticker_ids?.length)unsupported('/stickers');
+    const attachments=[];
+    for(const file of files)attachments.push(await session.core.upload(file,room));
+    const payload={type:'message',text:body.content||'',nonce:body.nonce||crypto.randomUUID(),files:attachments};
+    if(body.message_reference?.message_id)payload.reply=session.ids.raw('message',body.message_reference.message_id);
+    await session.core.send(payload,'message',room);
+    await session.ids.index(session.core.state);
+    prior=materializeMessages(session.core.state,room).find(event=>event.sender===session.pair.id&&event.payload.nonce===payload.nonce);
+    if(!prior)throw new Error('Message acknowledgement is pending. Reconnect to synchronize.');
+    const result=await session.message(room,prior);session.emit('MESSAGE_CREATE',result);return result;
+  })();
+  if(body.nonce)activeSends.set(key,operation);
+  try{return await operation;}finally{activeSends.delete(key);}
+}
+
+export async function vortexRequest(origin,method,path,options={},token) {
+  options.signal?.throwIfAborted();
+  await verifyNode(origin);
+  const parsed=new URL(path,origin);
+  if(parsed.origin!==origin)throw new Error('Request origin mismatch');
+  const route=parsed.pathname.replace(/^\/vortex\/api(?:\/v1)?/u,'').replace(/\/$/u,'')||'/';
+  const query=Object.fromEntries(parsed.searchParams);
+  if(options.query instanceof URLSearchParams)Object.assign(query,Object.fromEntries(options.query));
+  else Object.assign(query,options.query||{});
+  let body=options.body||{};const files=[];
+  const form=options.raw instanceof FormData?options.raw:body instanceof FormData?body:null;
+  if(form){body=JSON.parse(String(form.get('payload_json')||'{}'));for(const [,value]of form)if(value instanceof File)files.push(value);}
+  let data;let status=200;
+  if(route==='/auth/login'&&method==='POST')data=await login(origin,body);
+  else if(route==='/auth/register'&&method==='POST')data=await register(origin,body);
+  else if(route==='/auth/username-availability'&&method==='GET') {
+    const config=await auth.api(origin,'auth.config',{username:query.username});data={taken:config.registered};
+  } else if(route==='/auth/logout'&&method==='POST'){await logout(token,origin);status=204;}
+  else {
+    const session=await getSession(token,origin),core=session.core,state=core.state,ids=session.ids;
+    let match;
+    if(route==='/users/@me'&&method==='GET')data=session.currentUser();
+    else if(route==='/users/@me/settings') {
+      if(method==='PATCH') {state.prefs.fluxer={...state.prefs.fluxer,...body};await core.savePreferences();session.emit('USER_SETTINGS_UPDATE',state.prefs.fluxer);}
+      else if(method!=='GET')unsupported(route);
+      data=state.prefs.fluxer||{};
+    } else if(route==='/users/@me/channels'&&method==='GET')data=state.rooms.filter(room=>!room.space).map(room=>channelView(ids,state,room));
+    else if(route==='/users/@me/channels'&&method==='POST') {
+      const recipients=(body.recipients||[body.recipient_id]).filter(Boolean).map(id=>ids.raw('user',id));
+      const existing=recipients.length===1&&state.rooms.find(room=>room.kind==='dm'&&room.meta.members.includes(recipients[0]));
+      const room=existing||await core.createRoom(recipients.length===1?'dm':'group',{name:body.name||state.users.find(u=>u.id===recipients[0])?.display||'Group chat',members:recipients,space:'',background:true});
+      await ids.index(state);data=channelView(ids,state,room);session.emit('CHANNEL_CREATE',data);
+    } else if(route==='/users/@me/relationships'&&method==='GET')data=(await session.ready('local')).relationships;
+    else if(route==='/users/@me/relationships'&&method==='POST') {
+      const user=state.users.find(user=>user.username===body.username||ids.get('user',user.id)===body.user_id);
+      if(!user)throw Object.assign(new Error('No account has that username on this Node'),{status:404});
+      await core.action('friend',{user:user.id,kind:'request'});status=204;
+    } else if((match=route.match(/^\/users\/@me\/relationships\/(\d+)$/u))) {
+      const id=ids.raw('user',match[1]);
+      if(method==='PUT')await core.action('friend',{user:id,kind:body.type===2?'block':'accept'});
+      else if(method==='DELETE')await core.action('friend',{user:id,kind:'remove'});else unsupported(route);
+      await session.refresh();const relationship=(await session.ready('local')).relationships.find(r=>r.id===match[1]);
+      session.emit(relationship?'RELATIONSHIP_ADD':'RELATIONSHIP_REMOVE',relationship||{id:match[1],type:1});status=204;
+    } else if((match=route.match(/^\/users\/(\d+)(\/profile)?$/u))&&method==='GET') {
+      const user=state.users.find(u=>u.id===ids.raw('user',match[1]));
+      if(!user)throw Object.assign(new Error('Account unavailable'),{status:404});
+      data=match[2]?{user:userView(ids,user),user_profile:{bio:'',pronouns:'',accent_color:null,banner:null},connected_accounts:[],mutual_guilds:[],mutual_friends:[]}:userView(ids,user);
+    } else if(route==='/guilds'&&method==='POST') {
+      if(typeof body.name!=='string'||!body.name.trim())throw Object.assign(new Error('Enter a Space name'),{status:400});
+      const space=(await core.action('space.create',{sealed:auth.b64(auth.random(64))})).id;
+      await core.createRoom('text',{space,spaceName:body.name,name:'general',members:[],background:true});
+      await session.refresh();const guild=guildView(ids,state,state.spaces.find(s=>s.id===space));
+      session.emit('GUILD_CREATE',guild);data={...guild.properties,roles:guild.roles,channels:guild.channels};
+    } else if((match=route.match(/^\/guilds\/(\d+)\/channels$/u))) {
+      const space=ids.raw('guild',match[1]);
+      if(method==='GET')data=state.rooms.filter(room=>room.space===space).map(room=>channelView(ids,state,room));
+      else if(method==='POST') {
+        if(![0,2].includes(body.type??0))unsupported(route);
+        const members=(await core.action('space.members',{space})).members.filter(member=>!member.banned).map(member=>member.user);
+        const room=await core.createRoom(body.type===2?'voice':'text',{space,spaceName:state.rooms.find(r=>r.space===space)?.meta.spaceName||'Space',name:body.name,members,background:true});
+        await ids.index(state);data=channelView(ids,state,room);session.emit('CHANNEL_CREATE',data);
+      } else unsupported(route);
+    } else if((match=route.match(/^\/guilds\/(\d+)(?:\/members(?:\/(\d+))?)?$/u))&&method==='GET') {
+      const guild=guildView(ids,state,state.spaces.find(s=>s.id===ids.raw('guild',match[1])));
+      data=route.includes('/members')?(match[2]?guild.members.find(m=>m.user.id===match[2]):guild.members):{...guild.properties,roles:guild.roles};
+    } else if((match=route.match(/^\/channels\/(\d+)(.*)$/u))) {
+      const room=session.room(match[1]);if(!room)throw Object.assign(new Error('Conversation unavailable'),{status:404});
+      const suffix=match[2];
+      if(suffix==='/messages'&&method==='GET')data=await session.messages(room,query);
+      else if(suffix==='/messages'&&method==='POST')data=await sendMessage(session,room,body,files);
+      else if(suffix===''&&method==='GET')data=channelView(ids,state,room);
+      else if(suffix===''&&method==='DELETE') {await core.action('room.delete',{room:room.id});session.emit('CHANNEL_DELETE',channelView(ids,state,room));await session.refresh();status=204;}
+      else if(suffix==='/typing'&&method==='POST'){await core.send({type:'typing'},'typing',room);status=204;}
+      else if(suffix==='/pins'&&method==='GET')data=await Promise.all(materializeMessages(state,room).filter(e=>e.pinned&&!e.deleted).map(e=>session.message(room,e)));
+      else if(suffix.startsWith('/messages/search')&&method==='GET') {
+        const matching=materializeMessages(state,room).filter(e=>!e.deleted&&(e.payload.text||'').toLocaleLowerCase().includes(String(query.content||'').toLocaleLowerCase()));
+        data={total_results:matching.length,messages:await Promise.all(matching.slice(0,25).map(async e=>[await session.message(room,e)]))};
+      } else {
+        const eventRoute=suffix.match(/^\/(messages|pins)\/(\d+)(?:\/(ack|reactions)(?:\/([^/]+)(?:\/([^/]+))?)?)?$/u);
+        if(!eventRoute)unsupported(route);
+        const target=ids.raw('message',eventRoute[2]);
+        if(eventRoute[3]==='ack'){state.prefs.read??={};state.prefs.read[room.id]=target;await core.savePreferences();data={token:null};}
+        else if(eventRoute[3]==='reactions'){
+          if(!['PUT','DELETE'].includes(method))unsupported(route);
+          await core.send({type:'reaction',target,emoji:decodeURIComponent(eventRoute[4]),remove:method==='DELETE'},'message',room);status=204;
+        } else if(eventRoute[1]==='pins'&&['PUT','DELETE'].includes(method)){await core.send({type:'pin',target,enabled:method==='PUT'},'message',room);status=204;}
+        else if(method==='PATCH'){await core.send({type:'edit',target,text:body.content},'message',room);}
+        else if(method==='DELETE'){await core.send({type:'delete',target},'message',room);session.emit('MESSAGE_DELETE',{id:eventRoute[2],channel_id:match[1]});status=204;}
+        else if(method!=='GET')unsupported(route);
+        if(status!==204&&eventRoute[3]!=='ack'){
+          const event=materializeMessages(state,room).find(e=>e.id===target&&!e.deleted);
+          if(!event)throw Object.assign(new Error('Message unavailable'),{status:404});data=await session.message(room,event);
+          if(method!=='GET')session.emit('MESSAGE_UPDATE',data);
+        }
+      }
+    } else if(route==='/users/@me/guilds'&&method==='GET')data=state.spaces.map(space=>guildView(ids,state,space).properties);
+    else if(route==='/vortex/node'&&method==='GET')data=await core.action('me');
+    else if(route==='/vortex/node'&&method==='PATCH'){await core.action('policy',body);state.me=await core.action('me');data=state.me.policy;}
+    else if(route==='/vortex/users'&&method==='GET')data=await core.action('admin.users');
+    else if(route==='/vortex/storage'&&method==='GET')data=await core.action('admin.storage');
+    else if(route==='/users/@me/notes'&&method==='GET')data=state.prefs.notes||{};
+    else if((match=route.match(/^\/users\/@me\/notes\/(\d+)$/u))&&method==='PUT'){state.prefs.notes??={};state.prefs.notes[match[1]]=body.note;await core.savePreferences();status=204;}
+    else if(['/users/@me/connections','/users/@me/favorite-memes','/users/@me/saved-messages','/users/@me/gifts','/rtc/regions'].includes(route)&&method==='GET')data=[];
+    else unsupported(route);
+  }
+  options.signal?.throwIfAborted();
+  return {ok:true,status,headers:{'content-type':'application/json'},body:data};
+}

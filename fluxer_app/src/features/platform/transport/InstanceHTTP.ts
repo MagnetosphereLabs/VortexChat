@@ -15,6 +15,7 @@ import type {
 	RestResponse,
 } from '@app/features/platform/types/TransportTypes';
 import {Logger} from '@app/features/platform/utils/AppLogger';
+import {vortexOrigin} from '@app/vortex/Rest.js';
 
 const logger = Logger.create('InstanceHTTP');
 
@@ -83,6 +84,7 @@ export function currentInstanceTarget(): InstanceHTTPTarget {
 
 export function composeInstanceRequestPath(target: InstanceHTTPTarget, path: string): string {
 	validateInstanceTarget(target);
+	if (vortexOrigin(target.apiEndpoint)) return `${target.apiEndpoint}/v${target.apiVersion}${path}`;
 	if (http.matchesConfiguredRouting(target.apiEndpoint, target.apiVersion)) {
 		return path;
 	}

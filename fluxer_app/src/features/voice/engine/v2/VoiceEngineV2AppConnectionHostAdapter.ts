@@ -23,6 +23,7 @@ import {
 } from '@app/features/voice/engine/VoiceConnectionStateMachine';
 import {VoiceConnectionThrottle} from '@app/features/voice/engine/VoiceConnectionThrottle';
 import {
+	initializeVortexMediaKey,
 	createE2EEKeyProvider,
 	createE2EEWorker,
 	ownE2EEWorker,
@@ -613,8 +614,7 @@ export class VoiceEngineV2AppConnectionHostAdapter extends Store {
 				failConnectBeforeRoomConnect('Cannot join E2EE voice channel because E2EE setup failed');
 				return;
 			}
-			void e2eeKeyProvider
-				.setKey(e2eeKey)
+			void initializeVortexMediaKey(room, e2eeKeyProvider, e2eeKey)
 				.then(() => room.setE2EEEnabled(true))
 				.then(() => {
 					connectRoom();
@@ -627,7 +627,7 @@ export class VoiceEngineV2AppConnectionHostAdapter extends Store {
 				});
 			return;
 		}
-		connectRoom();
+		failConnectBeforeRoomConnect('Vortex requires end-to-end encryption for every call');
 	}
 
 	private handleRegionHotSwap(

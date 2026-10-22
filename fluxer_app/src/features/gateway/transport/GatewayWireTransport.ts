@@ -5,6 +5,7 @@ import {takePrebootGatewaySocket} from '@app/features/platform/state/PrebootNetw
 import {Logger} from '@app/features/platform/utils/AppLogger';
 import {randomUuid} from '@app/features/platform/utils/RandomUuid';
 import {getElectronAPI} from '@app/features/ui/utils/NativeUtils';
+import {VortexGateway} from '@app/vortex/Gateway.js';
 import {
 	NATIVE_GATEWAY_TRANSPORT_PROXIED_MESSAGE,
 	type NativeGatewayTransportAPI,
@@ -747,6 +748,7 @@ export function isDesktopNativeGatewayTransportAvailable(): boolean {
 }
 
 export function createGatewayWireTransport(url: string, options: GatewayWireTransportOptions): GatewayWireTransport {
+	if (new URL(url).pathname === '/vortex/gateway') return new VortexGateway(url);
 	const api = resolveNativeGatewayTransportAPI();
 	if (api != null) {
 		return new DesktopNativeGatewayWireTransport(url, getDesktopGatewayTransportRouter(api));

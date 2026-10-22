@@ -35,6 +35,8 @@ import {
 import {isObjectLike as isRecord} from '@fluxer/record_utils/src/RecordGuards';
 import {i18n} from '@lingui/core';
 import {msg} from '@lingui/core/macro';
+import {vortexOrigin} from '@app/vortex/Rest.js';
+import {dispatchVortex} from '@app/vortex/Transport';
 
 const TOO_MANY_REQUESTS_DESCRIPTOR = msg({message: 'Too many requests. Try again later.'});
 const log = new Logger('RestClient');
@@ -266,7 +268,12 @@ export class RestClient {
 		} catch (error) {
 			return Promise.reject(error);
 		}
-		return runWithSudoEscalation<T>(this.state, routing, ticket, method, path, options, 'fresh')
+		const absoluteEndpoint = path.match(/^(https?:\/\/[^/]+\/vortex\/api)(?:\/v1)?(?:\/|$)/u)?.[1];
+		const origin = vortexOrigin(absoluteEndpoint ?? routing?.canonicalBaseUrl);
+		const operation = origin
+			? dispatchVortex<T>(origin, method, path, options, options.auth === 'none' ? null : this.state.authProvider())
+			: runWithSudoEscalation<T>(this.state, routing, ticket, method, path, options, 'fresh');
+		return operation
 			.catch((error: unknown) => {
 				throw toAccountScopedFailure(ticket, error);
 			})

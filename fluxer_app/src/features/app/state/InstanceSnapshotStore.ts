@@ -27,6 +27,7 @@ import {
 	type OfficialReleaseChannel,
 	officialClientApiEndpointForAlias,
 } from '@fluxer/instance_bootstrap/src/OfficialInstance';
+import {DEFAULT_STOCK_LIMITS} from '@fluxer/limits/src/LimitDefaults';
 import {expandWireFormat} from '@fluxer/limits/src/LimitDiffer';
 import type {LimitConfigSnapshot, LimitConfigWireFormat} from '@fluxer/limits/src/LimitTypes';
 import {makeAutoObservable, observableShallow, runInAction} from 'mobx';
@@ -93,6 +94,9 @@ function readInstanceLimits(limits: LimitConfigSnapshot | LimitConfigWireFormat)
 export function runtimeSnapshotFromDiscovery(document: InstanceDiscoveryDocument): RuntimeConfigSnapshot {
 	const discovery = projectClientRuntimeDiscovery(document);
 	const endpoints = discovery.endpoints;
+	if (!new URL(endpoints.apiEndpoint).pathname.endsWith('/vortex/api')) {
+		throw new Error('Choose a Vortex Node. This client requires the Vortex encryption protocol.');
+	}
 	return requireRuntimeConfigSnapshot({
 		apiEndpoint: endpoints.apiEndpoint,
 		apiPublicEndpoint: endpoints.apiPublicEndpoint,
@@ -115,7 +119,7 @@ export function runtimeSnapshotFromDiscovery(document: InstanceDiscoveryDocument
 		community: discovery.community,
 		services: discovery.services,
 		publicPushVapidKey: discovery.push.public_vapid_key,
-		limits: readInstanceLimits(discovery.limits),
+		limits: {traitDefinitions: [], rules: [{id: 'vortex-free', limits: {...DEFAULT_STOCK_LIMITS, ...readInstanceLimits(discovery.limits).rules[0]?.limits}}]},
 		appPublic: discovery.appPublic,
 		agePolicy: discovery.agePolicy,
 		domainMigration: discovery.domainMigration,
