@@ -76,6 +76,11 @@ jobs:
           VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node
           VORTEX_PLAYWRIGHT_MODULE: ${{ github.workspace }}/.vortex-tools/node_modules/playwright/index.mjs
         run: node fluxer_app/scripts/VortexBrowserSmoke.mjs
+      - name: Record runner memory diagnostics
+        if: failure()
+        run: |
+          free -m
+          sudo dmesg --ctime | tail -50
       - name: Upload browser diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

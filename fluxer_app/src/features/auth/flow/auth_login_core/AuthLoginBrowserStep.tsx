@@ -33,7 +33,6 @@ import {VerifiedConnectionIcon} from '@app/features/ui/components/icons/Verified
 import {Spinner, SpinnerSize} from '@app/features/ui/components/Spinner';
 import FocusRing from '@app/features/ui/focus_ring/FocusRing';
 import {SteppedCarousel, SteppedCarouselActions} from '@app/features/ui/stepped_carousel/SteppedCarousel';
-import {isDesktop} from '@app/features/ui/utils/NativeUtils';
 import {flxElementClassName} from '@app/lib/react';
 import {DesktopHandoffReturnMethod} from '@fluxer/desktop_ipc/src/BrowserHandoffContract';
 import {isOfficialInstanceHost, OFFICIAL_INSTANCE_NAME} from '@fluxer/instance_bootstrap/src/OfficialInstance';

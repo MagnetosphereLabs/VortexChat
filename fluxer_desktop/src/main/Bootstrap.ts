@@ -25,11 +25,19 @@ import type {
 } from '@electron/main/ModuleUpdater';
 import type {SplashState, SplashStatus} from '@electron/main/SplashWindow';
 import {repairWindowsShortcuts} from '@electron/main/WindowsShortcuts';
-import {type BrowserWindow, app as electronApp} from 'electron';
+import {type BrowserWindow, app as electronApp, dialog} from 'electron';
 
 declare const __FLUXER_MAIN_APP_OUTPUT_FILE__: string;
 
 const requireModule = createRequire(import.meta.url);
+
+const unsafeSwitches = new Set(['--no-sandbox', '--disable-sandbox', '--disable-web-security', '--single-process', '--disable-gpu-sandbox']);
+if (process.argv.some(argument => unsafeSwitches.has(argument.split('=', 1)[0]))) {
+	dialog.showErrorBox('Vortex Chat needs a secure sandbox',
+		'This launcher disabled a browser security boundary. Install Vortex Chat with the Linux installer to configure its sandbox, then open the installed app.');
+	electronApp.exit(1);
+}
+electronApp.enableSandbox();
 
 if (process.platform === 'win32') {
 	const {VelopackApp} = requireModule('velopack') as typeof import('velopack');

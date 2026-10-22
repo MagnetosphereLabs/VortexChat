@@ -31,6 +31,7 @@ try {
     const context=await browser.newContext({viewport:{width:1440,height:1000},locale:'en-US'});
     const page=await context.newPage();const errors=[],outbound=[];
     page.on('request',request=>{if(request.method()==='POST')outbound.push(request.postData()||'');});
+    page.on('crash',()=>errors.push('Renderer process crashed'));
     page.on('pageerror',error=>errors.push(String(error)));
     page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
     page.on('requestfailed',request=>errors.push('Request failed: '+request.url()));
@@ -63,8 +64,9 @@ try {
     } catch(error) {
       failures++;console.error(name+': '+String(error));
       await page.screenshot({path:join(artifacts,name+'-failure.png'),fullPage:true}).catch(()=>{});
-      await writeFile(join(artifacts,name+'-failure.txt'),(await page.locator('body').innerText())+'\n\n'+errors.join('\n'));
-      console.error((await page.locator('body').innerText()).slice(0,10000));console.error(errors.join('\n').slice(0,20000));
+      const body=await page.locator('body').innerText({timeout:1000}).catch(()=>'(renderer unavailable)');
+      await writeFile(join(artifacts,name+'-failure.txt'),body+'\n\n'+errors.join('\n'));
+      console.error(body.slice(0,10000));console.error(errors.join('\n').slice(0,20000));
     } finally {await browser.close();}
   }
   assert.equal(failures,0,'Browser sign-in must pass on every tested engine');

@@ -32,15 +32,20 @@ export async function precacheAssets(runtime: AppShellRuntime, manifest: Readonl
 		return;
 	}
 	const cache = await runtime.caches.open(runtime.precacheName);
-	await Promise.allSettled(
-		manifest.map(async (entry) => {
-			const request = new Request(new URL(entry.url, runtime.origin).toString(), {cache: 'reload'});
-			const response = await runtime.fetch(request);
-			if (isCacheableResponse(response)) {
-				await cache.put(entry.url, response);
+	let next = 0;
+	// Avoid fetching hundreds of assets concurrently on a small self-hosted Node.
+	await Promise.all(Array.from({length: Math.min(4, manifest.length)}, async () => {
+		while (next < manifest.length) {
+			const entry = manifest[next++];
+			try {
+				const request = new Request(new URL(entry.url, runtime.origin).toString(), {cache: 'reload'});
+				const response = await runtime.fetch(request);
+				if (isCacheableResponse(response)) await cache.put(entry.url, response);
+			} catch (error) {
+				runtime.onCacheWriteError(error);
 			}
-		}),
-	);
+		}
+	}));
 }
 
 async function readAppShell(runtime: AppShellRuntime): Promise<Response | undefined> {
