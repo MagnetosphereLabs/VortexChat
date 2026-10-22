@@ -26,7 +26,10 @@ import {msg} from '@lingui/core/macro';
 import {Trans, useLingui} from '@lingui/react/macro';
 import {ClipboardIcon} from '@phosphor-icons/react';
 import {observer} from 'mobx-react-lite';
-import {useState} from 'react';
+import {useEffect, useState} from 'react';
+import RuntimeConfig from '@app/features/app/state/RuntimeConfig';
+import {http} from '@app/features/platform/transport/RestTransport';
+import {vortexOrigin} from '@app/vortex/Rest.js';
 import {useForm} from 'react-hook-form';
 
 const ENABLE_TWO_FACTOR_AUTHENTICATION_FORM_DESCRIPTOR = msg({
@@ -66,7 +69,17 @@ export const MfaTotpEnableModal = observer(({user}: MfaTotpEnableModalProps) => 
 	const {i18n} = useLingui();
 	const form = useForm<FormInputs>();
 	const [secret] = useState(() => MfaUtils.generateTotpSecret());
-	const encodedSecret = MfaUtils.encodeTotpSecret(secret);
+	const [nodeSecret, setNodeSecret] = useState('');
+	const isVortex = Boolean(vortexOrigin(RuntimeConfig.apiEndpoint));
+	const encodedSecret = isVortex ? nodeSecret : MfaUtils.encodeTotpSecret(secret);
+	useEffect(() => {
+		if (!isVortex) return;
+		let active = true;
+		void http.post<{seed: string}>('/users/@me/mfa/totp/start').then(response => {
+			if (active) setNodeSecret(response.body.seed);
+		}).catch(error => {if (active) form.setError('code', {message: String(error)});});
+		return () => {active = false;};
+	}, [isVortex, form]);
 	const isMobileExperience = isMobileExperienceEnabled();
 	const onSubmit = async (data: FormInputs) => {
 		const backupCodes = await MfaCommands.enableMfaTotp(encodedSecret, data.code.split(' ').join(''));
@@ -111,10 +124,10 @@ export const MfaTotpEnableModal = observer(({user}: MfaTotpEnableModalProps) => 
 				<Modal.Content data-flx="auth.mfa-totp-enable-modal.modal-content">
 					<Modal.ContentLayout data-flx="auth.mfa-totp-enable-modal.modal-content-layout">
 						<div className={styles.qrContainer} data-flx="auth.mfa-totp-enable-modal.qr-container">
-							{!isMobileExperience && (
+							{!isMobileExperience && encodedSecret && (
 								<div className={styles.qrCode} data-flx="auth.mfa-totp-enable-modal.qr-code">
 									<QRCodeCanvas
-										data={MfaUtils.encodeTotpSecretAsURL(user.email ?? user.tag, secret)}
+										data={isVortex ? `otpauth://totp/${encodeURIComponent('Vortex Chat:' + user.username)}?secret=${encodedSecret}&issuer=Vortex%20Chat&algorithm=SHA1&digits=6&period=30` : MfaUtils.encodeTotpSecretAsURL(user.email ?? user.tag, secret)}
 										data-flx="auth.mfa-totp-enable-modal.qr-code-canvas"
 									/>
 								</div>
@@ -178,6 +191,7 @@ export const MfaTotpEnableModal = observer(({user}: MfaTotpEnableModalProps) => 
 					<Button
 						type="submit"
 						submitting={form.formState.isSubmitting}
+						disabled={!encodedSecret}
 						data-flx="auth.mfa-totp-enable-modal.button.submit"
 					>
 						{i18n._(CONTINUE_DESCRIPTOR)}

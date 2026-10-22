@@ -67,6 +67,14 @@ export async function vortexRequest(origin,method,path,options={},token) {
     const session=await getSession(token,origin),core=session.core,state=core.state,ids=session.ids;
     let match;
     if(route==='/users/@me'&&method==='GET')data=session.currentUser();
+    else if(route==='/users/@me/mfa/totp/start'&&method==='POST')data=await core.action('totp.start');
+    else if(route==='/users/@me/mfa/totp/enable'&&method==='POST'){
+      const result=await core.action('totp.finish',{otp:body.code});
+      state.me=await core.action('me');session.emit('USER_UPDATE',session.currentUser());
+      data={backup_codes:result.recovery.map(code=>({code,consumed:false}))};
+    } else if(route==='/users/@me/mfa/totp/disable'&&method==='POST'){
+      await core.action('totp.disable',{otp:body.code});state.me=await core.action('me');session.emit('USER_UPDATE',session.currentUser());status=204;
+    }
     else if(route==='/users/@me/settings') {
       if(method==='PATCH') {state.prefs.fluxer={...state.prefs.fluxer,...body};await core.savePreferences();session.emit('USER_SETTINGS_UPDATE',state.prefs.fluxer);}
       else if(method!=='GET')unsupported(route);

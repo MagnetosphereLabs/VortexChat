@@ -164,6 +164,7 @@ export type LoginIdentifier = {email: string; login?: undefined} | {login: strin
 
 type LoginParams = LoginIdentifier & {
 	password: string;
+	code?: string;
 	inviteCode?: string;
 	target: InstanceHTTPTarget;
 };
@@ -212,10 +213,11 @@ function loginBody(params: LoginParams): {
 	email?: string;
 	login?: string;
 	password: string;
+	code?: string;
 	invite_code?: string;
 } {
 	if (params.login !== undefined) {
-		return withInviteCode({login: params.login, password: params.password}, params.inviteCode);
+		return withInviteCode({login: params.login, password: params.password, ...(params.code ? {code: params.code} : {})}, params.inviteCode);
 	}
 	return withInviteCode({email: params.email, password: params.password}, params.inviteCode);
 }

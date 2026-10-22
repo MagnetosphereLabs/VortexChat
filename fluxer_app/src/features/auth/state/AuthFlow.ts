@@ -59,6 +59,7 @@ export async function loginWithPassword({
 	...params
 }: AuthenticationCommands.LoginIdentifier & {
 	password: string;
+	code?: string;
 	inviteCode?: string;
 	runtimeSnapshot: RuntimeConfigSnapshot;
 }): Promise<LoginResult> {

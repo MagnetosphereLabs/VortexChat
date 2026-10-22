@@ -179,13 +179,14 @@ export function useLoginFormController({
 	useEffect(() => clearConnectingStatus, [clearConnectingStatus]);
 	const identifierField = loginIdentifierField(runtimeSnapshot);
 	const {form, isLoading, fieldErrors, error} = useAuthForm({
-		initialValues: {[identifierField]: '', password: ''},
+		initialValues: {[identifierField]: '', password: '', code: ''},
 		onSubmit: async (values) => {
 			const requestRuntimeSnapshot = requireLoginRuntimeSnapshot(runtimeSnapshot);
 			const identifier = values[identifierField] ?? '';
 			const result = await loginWithPassword({
 				...(identifierField === 'login' ? {login: identifier.trim()} : {email: identifier}),
 				password: values.password,
+				code: values.code.trim(),
 				inviteCode,
 				runtimeSnapshot: requestRuntimeSnapshot,
 			});

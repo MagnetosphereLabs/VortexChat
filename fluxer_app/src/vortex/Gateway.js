@@ -18,7 +18,10 @@ export class VortexGateway {
     this.pending=(this.pending||Promise.resolve()).then(async()=>{
       if(packet.op===2||packet.op===6)await this.identify(packet.d);
       else if(packet.op===4)await this.voice(packet.d);
-      else if(packet.op===3&&this.session)await this.session.core.action('presence',{idle:packet.d.status==='idle',status:packet.d.status||'online',tab:this.sessionId});
+      else if(packet.op===3&&this.session){
+        await this.session.core.action('status',{status:packet.d.status||'online'});
+        await this.session.core.action('presence',{idle:packet.d.status==='idle',instance:this.sessionId,viewing:globalThis.document?.visibilityState!=='hidden'});
+      }
       else if(packet.op===8&&this.session) {
         const ids=Array.isArray(packet.d.guild_id)?packet.d.guild_id:[packet.d.guild_id];
         for(const id of ids){const guild=this.guilds.get(id);if(guild)this.dispatch('GUILD_MEMBERS_CHUNK',{guild_id:id,members:guild.members,chunk_index:0,chunk_count:1,nonce:packet.d.nonce});}

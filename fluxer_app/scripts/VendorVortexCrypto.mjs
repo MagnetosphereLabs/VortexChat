@@ -40,7 +40,7 @@ await writeFile(path.join(destination, 'mls.js'), `${html.slice(bindingStart, bi
 await writeFile(path.join(destination, 'mls-bytes.js'), `export const mlsBytes = ${JSON.stringify(wasm)};\n`);
 const auth = source['web/chat-auth.js'].trim();
 if (!auth.startsWith('(()=>{') || !auth.endsWith('window.VortexChatAuth=t;})();')) throw new Error('Pinned authentication module layout changed');
-await writeFile(path.join(destination, 'auth.js'), `export const auth = ${auth.replace('window.VortexChatAuth=t;', 'return t;')}\n`);
+await writeFile(path.join(destination, 'auth.js'), `import {getVortexIndexedDB} from '../BrowserStorage.js';\nconst fetch=(input,options={})=>globalThis.fetch(input,{...options,signal:options.signal?AbortSignal.any([options.signal,AbortSignal.timeout(30000)]):AbortSignal.timeout(30000)});\nexport const auth = ${auth.replace('indexedDB.open(', 'getVortexIndexedDB().open(').replace('window.VortexChatAuth=t;', 'return t;')}\n`);
 const notices = html.match(/<script[^>]+type="[^"]*"[^>]*>([\s\S]*?)<\/script>/gu)?.filter(s => /notice|license|copyright/iu.test(s)).join('\n');
 await writeFile(path.join(destination, 'PROVENANCE.json'), JSON.stringify({repository:'MagnetosphereLabs/VortexNode',revision,sources,mlsSha256:createHash('sha256').update(mls).digest('hex')}, null, 2)+'\n');
 await writeFile(path.join(destination, 'THIRD_PARTY_NOTICES.txt'), notices || html.slice(html.lastIndexOf('<script')));

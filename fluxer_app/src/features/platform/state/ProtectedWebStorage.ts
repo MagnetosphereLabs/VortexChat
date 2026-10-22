@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import {setVortexIndexedDB} from '@app/vortex/BrowserStorage.js';
 
 function captureStorageBackend<T>(readStorage: () => T): T | null {
 	if (typeof window === 'undefined') {
@@ -14,6 +15,7 @@ function captureStorageBackend<T>(readStorage: () => T): T | null {
 const protectedLocalStorage = captureStorageBackend(() => window.localStorage);
 const protectedSessionStorage = captureStorageBackend(() => window.sessionStorage);
 const protectedIndexedDB = captureStorageBackend(() => window.indexedDB);
+setVortexIndexedDB(protectedIndexedDB);
 const protectedCacheStorage = captureStorageBackend(() => window.caches);
 
 let browserStorageAccessProtected = false;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // A device-local wrapping key. Conversation keys remain protected by the account root.
+import {getVortexIndexedDB} from './BrowserStorage.js';
 const encoder=new TextEncoder(),decoder=new TextDecoder();
 let pendingKey;
 function encode(bytes){let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(binary);}
@@ -8,7 +9,7 @@ export function localKey() {
   pendingKey??=(async()=>{
     const candidate=await crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt']);
     return new Promise((resolve,reject)=>{
-      const request=indexedDB.open('VortexDeviceKeys',1);
+      const request=getVortexIndexedDB().open('VortexDeviceKeys',1);
       request.onupgradeneeded=()=>request.result.createObjectStore('keys');
       request.onerror=()=>reject(request.error);
       request.onblocked=()=>reject(new Error('Close other Vortex windows to unlock device storage'));

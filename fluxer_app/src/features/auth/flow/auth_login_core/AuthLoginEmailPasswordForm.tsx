@@ -100,6 +100,15 @@ export default function AuthLoginEmailPasswordForm({
 				data-flx="auth.flow.auth-login-core.auth-login-email-password-form.form-field.set-value.password"
 			/>
 			{extraFields}
+			{identifierField === 'login' && <FormField
+				name="code"
+				type="text"
+				autoComplete="one-time-code"
+				label="Authenticator or recovery code (if enabled)"
+				value={form.getValue('code') || ''}
+				onChange={(value) => form.setValue('code', value)}
+				error={form.getError('code')}
+			/>}
 			{links ? (
 				<div className={linksWrapperClassName} data-flx="auth.flow.auth-login-core.auth-login-email-password-form.div">
 					{links}
