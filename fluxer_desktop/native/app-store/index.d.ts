@@ -3,6 +3,7 @@
 export interface AppStoreOptions {
 	path: string;
 	derivationVersion?: string | null;
+	encryptionKey?: string | null;
 }
 
 export interface AppStoreInitialization {

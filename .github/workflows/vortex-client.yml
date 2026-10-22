@@ -36,6 +36,34 @@ jobs:
         run: pnpm --filter fluxer_app build
       - name: Check client types
         run: pnpm --filter fluxer_app typecheck:only
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MagnetosphereLabs/VortexNode
+          ref: e5af59ab9209cc45a25b2dae0220d4cd102ea132
+          path: node-server
+          persist-credentials: false
+      - name: Build the matching Node
+        run: cargo build --locked --manifest-path node-server/Cargo.toml
+      - name: Verify encrypted client flows against Node
+        env:
+          VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node
+        run: pnpm --filter fluxer_app vortex:test
+      - name: Install browser test engines
+        run: |
+          npm install --prefix .vortex-tools --no-audit --no-fund playwright@1.58.2
+          .vortex-tools/node_modules/.bin/playwright install --with-deps chromium firefox webkit
+      - name: Test browser sign-in and session restore
+        env:
+          VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node
+          VORTEX_PLAYWRIGHT_MODULE: ${{ github.workspace }}/.vortex-tools/node_modules/playwright/index.mjs
+        run: node fluxer_app/scripts/VortexBrowserSmoke.mjs
+      - name: Upload browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vortex-browser-results
+          path: browser-results
+          retention-days: 7
       - name: Archive web client and provenance
         run: |
           cp fluxer_app/src/vortex/vendor/PROVENANCE.json fluxer_app/dist/vortex-crypto-provenance.json

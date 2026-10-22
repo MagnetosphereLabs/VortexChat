@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import {getProtectedLocalStorage} from '@app/features/platform/state/ProtectedWebStorage';
 import {Logger} from '@app/features/platform/utils/AppLogger';
 
 const logger = new Logger('AccountStorage');
@@ -18,7 +17,7 @@ function recordUserId(value: unknown): string | null {
 export class BrowserAccountFallbackStore {
 	private readonly records = new Map<string, unknown>();
 
-	constructor(private readonly storage: Storage | null = getProtectedLocalStorage()) {
+	constructor(private readonly storage: Storage | null = null) {
 		for (const value of this.readPersisted()) {
 			const userId = recordUserId(value);
 			if (userId !== null) {

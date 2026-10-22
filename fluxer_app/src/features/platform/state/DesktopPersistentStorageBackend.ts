@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {encryptStorageBackend} from '@app/vortex/EncryptedStorageBackend';
 import {type DesktopStoreAccessOptions, resolveDesktopStoreAPI} from '@app/features/platform/state/DesktopStoreAccess';
 import {
 	type AppStorageEntry,
@@ -46,7 +47,7 @@ async function run<Result>(operation: string, work: () => Promise<Result>): Prom
 }
 
 export function createDesktopPersistentStorageBackend(api: DesktopStorageAPI): PersistentStorageBackend {
-	return {
+	return encryptStorageBackend({
 		kind: PersistentStorageBackendKind.DESKTOP,
 
 		async load(scope) {
@@ -87,5 +88,5 @@ export function createDesktopPersistentStorageBackend(api: DesktopStorageAPI): P
 				),
 			);
 		},
-	};
+	});
 }

@@ -290,14 +290,19 @@ async function refreshRooms() {
   state.room && !state.rooms.some(e => e.id === state.room) && (state.room = null), state.call && !state.rooms.some(e => e.id === state.call.room) && (await Ye()), de();
 }
 let roomsGeneration = 0;
+let preferenceWrites = Promise.resolve();
 async function savePreferences() {
-  let t = await hkdf(un64(state.root.secret), "preferences"),
-    A = b64(await seal(t, enc.encode(JSON.stringify(state.prefs))));
-  await store("set", "prefs:" + state.me.id, A), KB(), clearTimeout(state.prefTimer), state.prefTimer = setTimeout(() => {
-    state.closed || action("preferences", {
-      body: A
-    }).catch(() => {});
-  }, 500);
+  const contents = JSON.stringify(state.prefs);
+  const persist = async () => {
+    if (state.closed) return;
+    const key = await hkdf(un64(state.root.secret), "preferences");
+    const encrypted = b64(await seal(key, enc.encode(contents)));
+    await store("set", "prefs:" + state.me.id, encrypted);
+    await action("preferences", {body: encrypted});
+  };
+  const operation = preferenceWrites.then(persist);
+  preferenceWrites = operation.catch(() => {});
+  return operation;
 }
 async function saveEngine() {
   if (state.closed) return;

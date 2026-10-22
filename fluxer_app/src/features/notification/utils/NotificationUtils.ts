@@ -350,6 +350,11 @@ export async function showNotification({
 	playSound?: boolean;
 	accountKey?: string | null;
 }): Promise<NotificationResult> {
+	// OS notification stores and push providers must never receive conversation previews.
+	title = 'Vortex Chat';
+	body = 'New encrypted activity';
+	subtitle = undefined;
+	icon = undefined;
 	try {
 		if (StreamerMode.shouldDisableNotifications) {
 			return {browserNotification: null, nativeNotificationId: null};

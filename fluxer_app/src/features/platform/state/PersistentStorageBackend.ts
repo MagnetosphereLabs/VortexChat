@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {encryptStorageBackend} from '@app/vortex/EncryptedStorageBackend';
 import {getProtectedIndexedDB} from '@app/features/platform/state/ProtectedWebStorage';
 
 export const PersistentStorageBackendKind = Object.freeze({
@@ -39,7 +40,7 @@ export interface PersistentStorageBackend {
 	setMany(writes: ReadonlyArray<AppStorageWrite>): Promise<void>;
 }
 
-export const APP_STORAGE_INDEXED_DB_NAME = 'fluxer-app-storage';
+export const APP_STORAGE_INDEXED_DB_NAME = 'vortex-app-storage';
 export const APP_STORAGE_INDEXED_DB_VERSION = 1;
 export const APP_STORAGE_OBJECT_STORE = 'entries';
 export const APP_STORAGE_SCOPE_INDEX = 'scope';
@@ -596,7 +597,7 @@ export function createPersistentStorageBackend(factory: IDBFactory | null): Pers
 	if (factory == null) {
 		return createMemoryBackend();
 	}
-	return createIndexedDBBackendWithMemoryFallback(factory);
+	return encryptStorageBackend(createIndexedDBBackendWithMemoryFallback(factory));
 }
 
 let sharedBackend: PersistentStorageBackend | null = null;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {deviceDatabaseKey} from '@electron/main/VortexDeviceKey';
 import {createRequire} from 'node:module';
 import type {
 	AppStoreAccount,
@@ -108,7 +109,7 @@ export function createAppStoreBoundary(
 	binding: AppStoreBindingConstructor | null = loadAppStoreBinding(),
 ): AppStoreBoundary | null {
 	if (!binding) return null;
-	const store = new binding(options);
+	const store = new binding({...options, encryptionKey: deviceDatabaseKey(options.path)});
 	return {
 		initialization: JSON.parse(store.initialization) as AppStoreInitialization,
 		close: () => {

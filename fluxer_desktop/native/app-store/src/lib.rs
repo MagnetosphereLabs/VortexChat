@@ -28,6 +28,7 @@ impl From<StoreError> for Error {
 pub struct AppStoreOptions {
     pub path: String,
     pub derivation_version: Option<String>,
+    pub encryption_key: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -109,9 +110,11 @@ impl AppStore {
 impl AppStore {
     #[napi(constructor)]
     pub fn new(options: AppStoreOptions) -> Result<Self> {
-        let store = Store::open(
+        let key = options.encryption_key.as_deref().ok_or_else(|| Error::new(Status::InvalidArg, "A device storage key is required"))?;
+        let store = Store::open_encrypted(
             PathBuf::from(options.path),
             options.derivation_version.as_deref(),
+            Some(key),
         )?;
         let initialization = describe(store.path().to_string_lossy().as_ref(), store.outcome())?;
         Ok(Self {

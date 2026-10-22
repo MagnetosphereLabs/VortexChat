@@ -10,6 +10,9 @@ import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {auth} from './vendor/auth.js';
 import {createVortexCore} from './Core.js';
+import {vortexRequest} from './Rest.js';
+import {getSession} from './Session.js';
+import {VortexGateway} from './Gateway.js';
 
 test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', {timeout:120000}, async t=>{
   assert.ok(process.env.VORTEX_NODE_BINARY,'Set VORTEX_NODE_BINARY to the compiled Node binary');
@@ -22,7 +25,7 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   const setup=spawnSync(binary,['setup','--data',dir,'--stdin-user','node.owner'],{input:password+'\n',encoding:'utf8'});
   assert.equal(setup.status,0,setup.stderr);
   const config=join(dir,'config.json');
-  await writeFile(config,JSON.stringify({listen:`127.0.0.1:${port}`,data_dir:dir,vault_html:join(dir,'unused.html'),node_id:auth.b64(auth.random()),bridge:auth.b64(auth.random()),reserve_bytes:0,vault_enabled:false}));
+  await writeFile(config,JSON.stringify({listen:`127.0.0.1:${port}`,data_dir:dir,vault_html:join(dir,'unused.html'),node_id:auth.b64(auth.random()),bridge:auth.b64(auth.random()),reserve_bytes:0,vault_enabled:false,public_url:url}));
   const nodeProcess=spawn(binary,['serve','--config',config],{env:{...globalThis.process.env,VORTEX_TEST:'1'},stdio:['ignore','pipe','pipe']});
   let stderr='';nodeProcess.stderr.on('data',data=>{stderr+=data;});
   t.after(async()=>{nodeProcess.kill('SIGTERM');await new Promise(r=>nodeProcess.once('exit',r));await rm(dir,{recursive:true,force:true});});
@@ -64,4 +67,36 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   await alice.removeMembers(room,bobPair.id);
   await assert.rejects(bob.action('events',{room:room.id,after:0}));
   await alice.send({type:'message',text:'After removal'},'message',alice.state.rooms.find(r=>r.id===room.id));
+  alice.close();bob.close();
+  const login=await vortexRequest(url,'POST','/auth/login',{body:{login:'alice.test',password}});
+  const token=login.body.token;
+  const client=await getSession(token,url);t.after(()=>client.close());
+  const request=(method,path,body)=>vortexRequest(url,method,path,{body},token);
+  const discovery=await (await fetch(url+'/.well-known/fluxer')).json();
+  assert.equal(discovery.endpoints.api,url+'/vortex/api');
+  const me=(await request('GET','/users/@me')).body;
+  assert.equal(me.username,'alice.test');
+  const guild=(await request('POST','/guilds',{name:'Encrypted UI Space'})).body;
+  assert.equal(guild.name,'Encrypted UI Space');
+  const channels=(await request('GET','/guilds/'+guild.id+'/channels')).body;
+  assert.equal(channels.length,1);
+  const channel=channels[0].id;
+  const message=(await request('POST','/channels/'+channel+'/messages',{content:'Through Fluxer',nonce:'test-nonce'})).body;
+  assert.equal(message.content,'Through Fluxer');
+  assert.equal((await request('POST','/channels/'+channel+'/messages',{content:'Through Fluxer',nonce:'test-nonce'})).body.id,message.id);
+  await request('PATCH','/channels/'+channel+'/messages/'+message.id,{content:'Edited locally'});
+  assert.equal((await request('GET','/channels/'+channel+'/messages')).body[0].content,'Edited locally');
+  await request('PUT','/channels/'+channel+'/messages/'+message.id+'/reactions/'+encodeURIComponent('❤️')+'/@me');
+  assert.equal((await request('GET','/channels/'+channel+'/messages')).body[0].reactions[0].count,1);
+  const gateway=new VortexGateway(url.replace('http:','ws:')+'/vortex/gateway');
+  t.after(()=>gateway.dispose());
+  const packets=[];gateway.on('message',event=>packets.push(JSON.parse(event.data)));gateway.start();await delay(0);
+  await gateway.identify({token});
+  assert.equal(packets.find(p=>p.t==='READY').d.user.id,me.id);
+  await request('POST','/channels/'+channel+'/messages',{content:'Gateway event',nonce:'gateway-nonce'});
+  assert.ok(packets.find(p=>p.t==='MESSAGE_CREATE'&&p.d.content==='Gateway event'));
+  await request('DELETE','/channels/'+channel+'/messages/'+message.id);
+  assert.ok(!(await request('GET','/channels/'+channel+'/messages')).body.find(m=>m.id===message.id));
+  await assert.rejects(request('POST','https://unrelated.invalid/auth/login',{password}));
+
 });

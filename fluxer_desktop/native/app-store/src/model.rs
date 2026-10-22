@@ -266,19 +266,27 @@ pub struct Store {
 
 impl Store {
     pub fn open(path: PathBuf, derivation_version: Option<&str>) -> Result<Self, StoreError> {
+        Self::open_encrypted(path, derivation_version, None)
+    }
+    pub fn open_encrypted(path: PathBuf, derivation_version: Option<&str>, key: Option<&str>) -> Result<Self, StoreError> {
+        if let Some(key) = key {
+            if key.len() != 64 || !key.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err(StoreError::Refused("invalid device storage key"));
+            }
+        }
         let parent = path
             .parent()
             .ok_or_else(|| StoreError::PathHasNoParent(path.clone()))?
             .to_owned();
         fs::create_dir_all(&parent).map_err(|source| io_error(&parent, source))?;
         restrict_path(&parent, PathKind::Directory);
-        match Self::try_open(&path, derivation_version) {
+        match Self::try_open(&path, derivation_version, key) {
             Ok(store) => Ok(store),
             Err(OpenFailure::Fatal(error)) => Err(error),
             Err(OpenFailure::Quarantine(reason)) => {
                 let quarantined = quarantine(&path, reason)?;
                 let mut store =
-                    Self::try_open(&path, derivation_version).map_err(|failure| match failure {
+                    Self::try_open(&path, derivation_version, key).map_err(|failure| match failure {
                         OpenFailure::Fatal(error) => error,
                         OpenFailure::Quarantine(_) => {
                             StoreError::Refused("a freshly created app store still failed to open")
@@ -291,8 +299,15 @@ impl Store {
         }
     }
 
-    fn try_open(path: &Path, derivation_version: Option<&str>) -> Result<Self, OpenFailure> {
+    fn try_open(path: &Path, derivation_version: Option<&str>, key: Option<&str>) -> Result<Self, OpenFailure> {
         let mut conn = Connection::open(path)?;
+        if let Some(key) = key {
+            conn.pragma_update(None, "key", format!("x'{key}'"))?;
+            conn.pragma_update(None, "cipher_memory_security", true)?;
+            // A wrong/unavailable key is not corruption: preserve the original file.
+            conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
+                .map_err(|_| OpenFailure::Fatal(StoreError::Refused("device storage could not be unlocked")))?;
+        }
         restrict_path(path, PathKind::File);
         conn.busy_timeout(BUSY_TIMEOUT)?;
         conn.pragma_update(None, "foreign_keys", true)?;
@@ -712,6 +727,21 @@ mod tests {
             .expect("user_version is readable")
     }
 
+    #[test]
+    fn encrypted_store_reopens_and_wrong_keys_never_replace_it() {
+        let (_dir, path) = store_dir();
+        let key = "4a".repeat(32);
+        let store = Store::open_encrypted(path.clone(), None, Some(&key)).unwrap();
+        store.set_metadata("private", "secret-value-that-must-not-be-on-disk").unwrap();
+        drop(store);
+        let before = fs::read(&path).unwrap();
+        assert!(!before.starts_with(b"SQLite format 3"));
+        assert!(!before.windows(b"secret-value-that-".len()).any(|part| part == b"secret-value-that-"));
+        assert!(Store::open_encrypted(path.clone(), None, Some(&"5b".repeat(32))).is_err());
+        assert_eq!(fs::read(&path).unwrap(), before);
+        let reopened = Store::open_encrypted(path, None, Some(&key)).unwrap();
+        assert_eq!(reopened.metadata("private").unwrap().as_deref(), Some("secret-value-that-must-not-be-on-disk"));
+    }
     #[test]
     fn a_fresh_store_applies_the_baseline_and_reopens_unchanged() {
         let (_dir, path) = store_dir();

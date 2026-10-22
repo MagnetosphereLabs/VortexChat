@@ -28,11 +28,12 @@ import {
 	storedAccountRecordFromClassifiedEntry,
 	storedAccountRecordsFromInventory,
 } from '@app/features/auth/state/StoredAccountInventoryPolicy';
+import {sealLocal, openLocal} from '@app/vortex/LocalCipher.js';
 import {getProtectedIndexedDB} from '@app/features/platform/state/ProtectedWebStorage';
 import {Logger} from '@app/features/platform/utils/AppLogger';
 
 const logger = new Logger('AccountStorage');
-const DATABASE_NAME = 'FluxerAccounts';
+const DATABASE_NAME = 'VortexAccounts';
 const DATABASE_VERSION = 2;
 const STORE_NAME = 'accounts';
 const REQUEST_TIMEOUT_MS = 5000;
@@ -64,6 +65,22 @@ function closeAccountStorageDatabase(database: IDBDatabase, context: string): vo
 	}
 }
 
+interface SealedAccount {
+    userId: string;
+    storageKey?: string;
+    instance?: StoredAccount['instance'];
+    encrypted: string;
+}
+async function sealAccount(record: StoredAccount): Promise<SealedAccount> {
+    return {userId: record.userId, storageKey: record.storageKey, instance: record.instance,
+        encrypted: await sealLocal('accounts', record.userId, JSON.stringify(record))};
+}
+async function openAccount(value: unknown): Promise<unknown> {
+    if (value === null || value === undefined) return null;
+    const record = value as SealedAccount;
+    if (typeof record.userId !== 'string' || typeof record.encrypted !== 'string') throw new Error('Unencrypted account record rejected');
+    return JSON.parse(await openLocal('accounts', record.userId, record.encrypted));
+}
 export class BrowserAccountStorageRepository {
 	private readonly indexedDB = getProtectedIndexedDB();
 	private database: IDBDatabase | null = null;
@@ -82,7 +99,7 @@ export class BrowserAccountStorageRepository {
 	async listInventory(): Promise<StoredAccountInventory> {
 		return createStoredAccountInventory(
 			'idb',
-			(await this.listRaw()).map((value) =>
+			(await Promise.all((await this.listRaw()).map(openAccount))).map((value) =>
 				classifyStoredAccount({value, authoritativeStorageKey: null, source: 'idb'}),
 			),
 		);
@@ -121,7 +138,7 @@ export class BrowserAccountStorageRepository {
 		const userId = accountKeyUserId(accountKey);
 		const database = await this.openStore();
 		const value =
-			database instanceof BrowserAccountFallbackStore ? database.get(userId) : await this.readRaw(database, userId);
+			await openAccount(database instanceof BrowserAccountFallbackStore ? database.get(userId) : await this.readRaw(database, userId));
 		if (value === null) {
 			return null;
 		}
@@ -152,14 +169,18 @@ export class BrowserAccountStorageRepository {
 
 	async replaceInventoryEntry(request: StoredAccountInventoryReplacement): Promise<QualifiedStoredAccount> {
 		const replacement = normalizeStoredAccountInventoryReplacement(request);
+		const encryptedReplacement = await sealAccount(replacement);
 		const storageKey = inventoryEntryStorageKey(request.expected);
 		const userId = accountKeyUserId(storageKey);
 		const database = await this.openStore();
 		if (database instanceof BrowserAccountFallbackStore) {
-			this.assertReplaceable(database.get(userId), storageKey, request.expected);
-			database.put(replacement);
+			this.assertReplaceable(await openAccount(database.get(userId)), storageKey, request.expected);
+			database.put(encryptedReplacement);
 			return replacement;
 		}
+		const priorRaw = await this.readRaw(database, userId);
+		const prior = await openAccount(priorRaw);
+		this.assertReplaceable(prior, storageKey, request.expected);
 		return await this.runTransaction<QualifiedStoredAccount>(
 			database,
 			'readwrite',
@@ -173,8 +194,8 @@ export class BrowserAccountStorageRepository {
 						return;
 					}
 					try {
-						this.assertReplaceable(read.result, storageKey, request.expected);
-						const write = transaction.store.put(replacement);
+						if (JSON.stringify(read.result) !== JSON.stringify(priorRaw)) throw new StoredAccountInventoryReplacementConflictError(storageKey, 'Account changed during replacement');
+						const write = transaction.store.put(encryptedReplacement);
 						write.onerror = () => transaction.fail(write.error ?? new Error('IndexedDB replacement put failed'));
 						transaction.setResult(replacement);
 					} catch (error) {
@@ -258,7 +279,7 @@ export class BrowserAccountStorageRepository {
 	}
 
 	async writeMigration(records: ReadonlyArray<StoredAccount>): Promise<void> {
-		const normalized = records.map(normalizeStoredAccount);
+		const normalized = await Promise.all(records.map(record => sealAccount(normalizeStoredAccount(record))));
 		const database = await this.openStore();
 		if (database instanceof BrowserAccountFallbackStore) {
 			database.putMany(normalized);
@@ -285,12 +306,13 @@ export class BrowserAccountStorageRepository {
 
 	private async write(record: StoredAccount, mode: 'preserve-instance' | 'replace-instance'): Promise<void> {
 		const normalized = normalizeStoredAccount(record);
+		const encrypted = await sealAccount(normalized);
 		const database = await this.openStore();
 		if (database instanceof BrowserAccountFallbackStore) {
 			if (mode === 'preserve-instance') {
 				assertAccountWritePreservesInstance(database.get(normalized.userId) as StoredAccount | null, normalized);
 			}
-			database.put(normalized);
+			database.put(encrypted);
 			return;
 		}
 		await this.runTransaction<void>(
@@ -309,7 +331,7 @@ export class BrowserAccountStorageRepository {
 						if (mode === 'preserve-instance') {
 							assertAccountWritePreservesInstance((request.result as StoredAccount | undefined) ?? null, normalized);
 						}
-						const write = transaction.store.put(normalized);
+						const write = transaction.store.put(encrypted);
 						write.onerror = () => transaction.fail(write.error ?? new Error('IndexedDB put failed'));
 						transaction.setResult(undefined);
 					} catch (error) {

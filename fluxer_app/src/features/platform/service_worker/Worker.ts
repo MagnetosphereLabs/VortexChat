@@ -341,11 +341,11 @@ self.addEventListener('push', (event: PushEvent) => {
 			} catch (error) {
 				await log('error', 'push: JSON parse failed', {
 					error: describeError(error),
-					rawPreview: rawText?.slice(0, 512) ?? null,
+					hasPayload: rawText !== null,
 				});
 			}
 			const payload = normalizePushPayload(raw ?? {title: PRODUCT_NAME});
-			const title = payload.title ?? PRODUCT_NAME;
+			const title = 'Vortex Chat';
 			const tag = resolvePushNotificationTag(payload);
 			const badgeCount = getBadgeCount(payload);
 			if (isNotificationClearPayload(payload)) {
@@ -361,7 +361,7 @@ self.addEventListener('push', (event: PushEvent) => {
 				await log('warn', 'push ignored in native desktop service worker', {badgeCount});
 				return;
 			}
-			const body = payload.body ?? '';
+			const body = 'New encrypted activity';
 			let clientState = getPushNotificationClientState([]);
 			try {
 				const clientList = (await self.clients.matchAll({
@@ -377,8 +377,8 @@ self.addEventListener('push', (event: PushEvent) => {
 				renotify?: boolean;
 			} = {
 				body,
-				icon: payload.icon ?? undefined,
-				badge: payload.badge ?? undefined,
+				icon: undefined,
+				badge: undefined,
 				data: payload.data ?? undefined,
 				tag,
 				renotify,
