@@ -13,6 +13,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: vortex-linux-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   linux:
     runs-on: ubuntu-22.04
@@ -101,6 +104,7 @@ jobs:
           path: node-server
           persist-credentials: false
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        id: node-cache
         with:
           path: |
             node-server/target
@@ -108,6 +112,13 @@ jobs:
           key: vortex-node-linux22-rust199-${{ hashFiles('node-server/Cargo.lock') }}
       - name: Build matching test Node
         run: cargo build --locked --manifest-path node-server/Cargo.toml
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        if: steps.node-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            node-server/target
+            ~/.cargo/registry
+          key: ${{ steps.node-cache.outputs.cache-primary-key }}
       - name: Install desktop test dependencies
         run: |
           sudo apt-get update

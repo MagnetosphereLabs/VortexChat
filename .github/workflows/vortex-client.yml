@@ -75,6 +75,8 @@ jobs:
         run: |
           npm install --prefix .vortex-tools --no-audit --no-fund playwright@1.58.2
       - name: Test Chrome sign-in and encrypted messaging
+        id: chrome
+        continue-on-error: true
         timeout-minutes: 5
         env:
           VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node
@@ -82,16 +84,29 @@ jobs:
           VORTEX_BROWSERS: chromium
           VORTEX_CHROME_CHANNEL: chrome
         run: node fluxer_app/scripts/VortexBrowserSmoke.mjs
+      - name: Verify encrypted video, shared audio and media revocation
+        id: media
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node
+          VORTEX_PLAYWRIGHT_MODULE: ${{ github.workspace }}/.vortex-tools/node_modules/playwright/index.mjs
+        run: node fluxer_app/scripts/VortexMediaSmoke.mjs
       - name: Install Firefox and WebKit
         timeout-minutes: 8
         run: .vortex-tools/node_modules/.bin/playwright install --with-deps firefox webkit
       - name: Test Firefox and WebKit sign-in and encrypted messaging
+        id: other-browsers
+        continue-on-error: true
         timeout-minutes: 6
         env:
           VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node
           VORTEX_PLAYWRIGHT_MODULE: ${{ github.workspace }}/.vortex-tools/node_modules/playwright/index.mjs
           VORTEX_BROWSERS: firefox,webkit
         run: node fluxer_app/scripts/VortexBrowserSmoke.mjs
+      - name: Require browser, media and type checks
+        if: always() && (steps.types.outcome != 'success' || steps.chrome.outcome != 'success' || steps.media.outcome != 'success' || steps.other-browsers.outcome != 'success')
+        run: exit 1
       - name: Record runner memory diagnostics
         if: failure()
         run: |

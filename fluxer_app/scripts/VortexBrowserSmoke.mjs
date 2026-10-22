@@ -51,7 +51,7 @@ try {
       await page.locator('[data-flx="guild.add-guild-modal.action-button.action-button.click"]').first().click();
       await page.locator('input[name="name"]').fill('Private '+name+' Space');
       await page.locator('[data-flx="guild.add-guild-modal.guild-create-form.button.submit"]').click();
-      const editor=page.locator('[contenteditable="true"][role="textbox"]').first();
+      const editor=page.locator('[data-channel-textarea][contenteditable="true"]').first();
       await editor.waitFor({timeout:60000});
       const message='Private browser message '+name+' '+crypto.randomUUID();
       await editor.fill(message);await editor.press('Enter');

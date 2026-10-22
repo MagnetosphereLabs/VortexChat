@@ -172,7 +172,7 @@ class GeoIP {
 
 	private async resolve(): Promise<void> {
 		const endpoint = this.transportApiEndpoint;
-		if (endpoint === null || endpoint.replace(/\/$/u, '').endsWith('/vortex/api')) {
+		if (endpoint === null || this.instanceKey?.replace(/\/$/u, '').endsWith('/vortex/api')) {
 			this.settle('unavailable', this.generation);
 			return;
 		}
