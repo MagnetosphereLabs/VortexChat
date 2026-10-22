@@ -27,7 +27,7 @@ try {
   await auth.api(origin,'policy',{title:'Browser test',signupUntil:0,createSpaces:'everyone',chatQuota:0,maxUpload:10485760},owner.token);
   let failures=0;
   for(const name of (process.env.VORTEX_BROWSERS||'chromium,firefox,webkit').split(',')) {
-    const browser=await playwright[name].launch({headless:true});
+    const browser=await playwright[name].launch({headless:true,...name==='chromium'&&process.env.VORTEX_CHROME_CHANNEL?{channel:process.env.VORTEX_CHROME_CHANNEL}: {}});
     const context=await browser.newContext({viewport:{width:1440,height:1000},locale:'en-US'});
     const page=await context.newPage();const errors=[],outbound=[];
     page.on('request',request=>{if(request.method()==='POST')outbound.push(request.postData()||'');});
