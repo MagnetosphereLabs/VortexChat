@@ -70,6 +70,6 @@ describe('running channels stay apart', () => {
 		const source = fs.readFileSync(path.join(DESKTOP_DIR, 'src/common/UserDataPath.ts'), 'utf8');
 		const map = /channelStorageDirectoryMap: ChannelStorageDirectoryMap = \{([^}]+)\}/u.exec(source)?.[1] ?? '';
 		const directories = CHANNELS.map((channel) => new RegExp(`${channel}: '([^']+)'`, 'u').exec(map)?.[1]);
-		assert.deepEqual(directories, ['fluxer', 'fluxercanary', 'fluxerdevelopment']);
+		assert.deepEqual(directories, ['vortex-chat', 'vortex-chat-canary', 'vortex-chat-development']);
 	});
 });

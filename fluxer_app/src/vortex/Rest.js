@@ -2,6 +2,7 @@
 import {auth} from './vendor/auth.js';
 import {getSession,login,register,logout} from './Session.js';
 import {channelView,guildView,userView,materializeMessages,callView,freePremiumState} from './Projection.js';
+import {readConversationArchive,searchPrivateMessages} from './PrivateSearch.js';
 
 export function vortexOrigin(endpoint) {
   if(!endpoint)return null;
@@ -27,7 +28,7 @@ async function sendMessage(session,room,body,files) {
   const key=session.pair.url+':'+session.pair.id+':'+room.id+':'+body.nonce;
   if(body.nonce&&activeSends.has(key))return activeSends.get(key);
   const operation=(async()=>{
-    await session.refresh();
+    await session.refresh(true);
     let prior=body.nonce&&materializeMessages(session.core.state,room).find(event=>event.sender===session.pair.id&&event.payload.nonce===body.nonce);
     if(prior)return session.message(room,prior);
     if(body.sticker_ids?.length)unsupported('/stickers');
@@ -67,6 +68,37 @@ export async function vortexRequest(origin,method,path,options={},token) {
     const session=await getSession(token,origin),core=session.core,state=core.state,ids=session.ids;
     let match;
     if(route==='/premium/state'&&method==='GET')data=freePremiumState();
+    else if(route==='/search/messages'&&method==='POST')data=await searchPrivateMessages(session,body,options.signal);
+    else if(route==='/users/@me/saved-messages'&&method==='POST') {
+      const room=session.room(body.channel_id);
+      if(!room)throw Object.assign(new Error('Conversation unavailable'),{status:404});
+      const target=ids.raw('message',body.message_id);
+      const event=(await readConversationArchive(session,room,options.signal)).find(event=>event.id===target);
+      if(!event)throw Object.assign(new Error('Message unavailable'),{status:404});
+      const saved=state.prefs.savedMessages||[];
+      if(!saved.some(item=>item.id===target)){
+        if(saved.length>=2000)throw new Error('Remove a bookmark before saving another');
+        state.prefs.savedMessages=[...saved,{id:target,room:room.id,wire:body.message_id,channel:body.channel_id}];
+        await core.savePreferences();
+      }
+      data=await session.message(room,event);session.emit('SAVED_MESSAGE_CREATE',data);
+    } else if(route==='/users/@me/saved-messages'&&method==='GET') {
+      const saved=[...state.prefs.savedMessages||[]].filter(item=>!query.before||BigInt(item.wire)<BigInt(query.before));
+      saved.sort((a,b)=>BigInt(a.wire)<BigInt(b.wire)?1:-1);
+      const archives=new Map();data=[];
+      for(const item of saved.slice(0,Math.max(1,Math.min(100,Number(query.limit)||50)))) {
+        const room=state.rooms.find(room=>room.id===item.room);let message=null;
+        if(room){
+          if(!archives.has(room.id))archives.set(room.id,await readConversationArchive(session,room,options.signal));
+          const event=archives.get(room.id).find(event=>event.id===item.id);
+          if(event)message=await session.message(room,event);
+        }
+        data.push({id:item.wire,message_id:item.wire,channel_id:item.channel,status:message?'available':'missing_permissions',message});
+      }
+    } else if((match=route.match(/^\/users\/@me\/saved-messages\/(\d+)$/u))&&method==='DELETE') {
+      state.prefs.savedMessages=(state.prefs.savedMessages||[]).filter(item=>item.wire!==match[1]);
+      await core.savePreferences();session.emit('SAVED_MESSAGE_DELETE',{message_id:match[1]});status=204;
+    }
     else if(route==='/users/@me'&&method==='GET')data=session.currentUser();
     else if(route==='/users/@me/mfa/totp/start'&&method==='POST')data=await core.action('totp.start');
     else if(route==='/users/@me/mfa/totp/enable'&&method==='POST'){
@@ -95,7 +127,7 @@ export async function vortexRequest(origin,method,path,options={},token) {
       const id=ids.raw('user',match[1]);
       if(method==='PUT')await core.action('friend',{user:id,kind:body.type===2?'block':'accept'});
       else if(method==='DELETE')await core.action('friend',{user:id,kind:'remove'});else unsupported(route);
-      await session.refresh();const relationship=(await session.ready('local')).relationships.find(r=>r.id===match[1]);
+      await session.refresh(true);const relationship=(await session.ready('local')).relationships.find(r=>r.id===match[1]);
       session.emit(relationship?'RELATIONSHIP_ADD':'RELATIONSHIP_REMOVE',relationship||{id:match[1],type:1});status=204;
     } else if((match=route.match(/^\/users\/(\d+)(\/profile)?$/u))&&method==='GET') {
       const user=state.users.find(u=>u.id===ids.raw('user',match[1]));
@@ -105,7 +137,7 @@ export async function vortexRequest(origin,method,path,options={},token) {
       if(typeof body.name!=='string'||!body.name.trim())throw Object.assign(new Error('Enter a Space name'),{status:400});
       const space=(await core.action('space.create',{sealed:auth.b64(auth.random(64))})).id;
       await core.createRoom('text',{space,spaceName:body.name,name:'general',members:[],background:true});
-      await session.refresh();const guild=guildView(ids,state,state.spaces.find(s=>s.id===space));
+      await session.refresh(true);const guild=guildView(ids,state,state.spaces.find(s=>s.id===space));
       session.emit('GUILD_CREATE',guild);data={...guild.properties,roles:guild.roles,channels:guild.channels};
     } else if((match=route.match(/^\/guilds\/(\d+)\/channels$/u))) {
       const space=ids.raw('guild',match[1]);
@@ -126,7 +158,7 @@ export async function vortexRequest(origin,method,path,options={},token) {
       else if(suffix==='/messages'&&method==='POST')data=await sendMessage(session,room,body,files);
       else if(suffix===''&&method==='GET')data=channelView(ids,state,room);
       else if(suffix===''&&method==='PATCH'){await core.updateMetadata(room,{name:body.name,topic:body.topic,position:body.position});data=channelView(ids,state,session.room(match[1]));session.emit('CHANNEL_UPDATE',data);}
-      else if(suffix===''&&method==='DELETE') {await core.action('room.delete',{room:room.id});session.emit('CHANNEL_DELETE',channelView(ids,state,room));await session.refresh();status=204;}
+      else if(suffix===''&&method==='DELETE') {await core.action('room.delete',{room:room.id});session.emit('CHANNEL_DELETE',channelView(ids,state,room));await session.refresh(true);status=204;}
       else if(suffix==='/typing'&&method==='POST'){await core.send({type:'typing'},'typing',room);status=204;}
       else if(suffix==='/call'&&method==='GET')data={ringable:!room.space,...callView(ids,state,room)};
       else if(['/call/ring','/call/stop-ringing'].includes(suffix)&&method==='POST'){
@@ -147,6 +179,14 @@ export async function vortexRequest(origin,method,path,options={},token) {
         const target=ids.raw('message',eventRoute[2]);
         if(eventRoute[3]==='ack'){state.prefs.read??={};state.prefs.read[room.id]=target;await core.savePreferences();session.emit('MESSAGE_ACK',{channel_id:match[1],message_id:eventRoute[2],mention_count:0,manual:false});data={token:null};}
         else if(eventRoute[3]==='reactions'){
+          if(method==='GET'){
+            const event=materializeMessages(state,room).find(event=>event.id===target&&!event.deleted);
+            const people=event?.reactions.get(decodeURIComponent(eventRoute[4]))||new Set();
+            data=[...people].map(id=>state.users.find(user=>user.id===id)||state.formerUsers?.find(user=>user.id===id)).filter(Boolean).map(user=>userView(ids,user));
+            if(query.after)data=data.filter(user=>BigInt(user.id)>BigInt(query.after));
+            data.sort((a,b)=>BigInt(a.id)<BigInt(b.id)?-1:1);data=data.slice(0,Math.max(1,Math.min(100,Number(query.limit)||25)));
+            return {ok:true,status:200,headers:{'content-type':'application/json'},body:data};
+          }
           if(!['PUT','DELETE'].includes(method))unsupported(route);
           await core.send({type:'reaction',target,emoji:decodeURIComponent(eventRoute[4]),remove:method==='DELETE'},'message',room);status=204;
         } else if(eventRoute[1]==='pins'&&['PUT','DELETE'].includes(method)){await core.send({type:'pin',target,enabled:method==='PUT'},'message',room);status=204;}
@@ -186,7 +226,7 @@ export async function vortexRequest(origin,method,path,options={},token) {
       const target=state.users.find(user=>user.username===body.username);if(!target)throw new Error('No account has that username on this Node');
       data={id:await core.inviteSpace(body.space||(body.guild_id&&ids.raw('guild',body.guild_id)),target.id)};
     }
-    else if(route==='/vortex/space-invites'&&method==='PATCH'){await core.respondInvitation(body.id,body.accept===true);await session.refresh();status=204;}
+    else if(route==='/vortex/space-invites'&&method==='PATCH'){await core.respondInvitation(body.id,body.accept===true);await session.refresh(true);status=204;}
     else if(route==='/vortex/storage'&&method==='GET')data=await core.action('admin.storage');
     else if(['/users/@me/push/subscribe','/users/@me/push/rotate'].includes(route)&&method==='POST'){
       await core.action('push',{endpoint:body.endpoint,p256dh:body.keys?.p256dh,auth:body.keys?.auth});
@@ -199,7 +239,7 @@ export async function vortexRequest(origin,method,path,options={},token) {
     }
     else if(route==='/users/@me/notes'&&method==='GET')data=state.prefs.notes||{};
     else if((match=route.match(/^\/users\/@me\/notes\/(\d+)$/u))&&method==='PUT'){state.prefs.notes??={};state.prefs.notes[match[1]]=body.note;await core.savePreferences();status=204;}
-    else if(['/users/@me/connections','/users/@me/favorite-memes','/users/@me/saved-messages','/users/@me/gifts','/rtc/regions'].includes(route)&&method==='GET')data=[];
+    else if(['/users/@me/connections','/users/@me/favorite-memes','/users/@me/gifts','/rtc/regions'].includes(route)&&method==='GET')data=[];
     else unsupported(route);
   }
   options.signal?.throwIfAborted();

@@ -74,10 +74,10 @@ export function guildView(ids,state,space) {
     emojis:[],stickers:[],voice_states:[],presences:[],joined_at:new Date(0).toISOString()};
 }
 
-export function materializeMessages(state,room) {
+export function materializeMessages(state,room,events=state.messages.get(room.id)||[]) {
   const messages=new Map();
   const canModerate=id=>id===room.creator||(room.moderators||[]).includes(id);
-  for(const event of [...state.messages.get(room.id)||[]].sort((a,b)=>a.seq-b.seq)) {
+  for(const event of [...events].sort((a,b)=>a.seq-b.seq)) {
     const payload=event.payload;
     if(payload.type==='message') {messages.set(event.id,{...event,payload:{...payload},reactions:new Map()});continue;}
     const target=messages.get(payload.target);if(!target)continue;

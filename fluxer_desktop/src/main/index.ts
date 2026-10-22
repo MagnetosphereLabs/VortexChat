@@ -76,7 +76,6 @@ import {
 import {initializeJumpList} from '@electron/main/JumpList';
 import {describeLaunchDiagnosticOptions, shouldDisableModuleUpdatesForLaunch} from '@electron/main/LaunchOptions';
 import {cleanupLegacyHarvestHandlers, registerLegacyHarvestHandlers} from '@electron/main/LegacyHarvestIpc';
-import {initializeLegacyOriginHarvest} from '@electron/main/LegacyOriginHarvest';
 import {cleanupVirtmic, registerVirtmicHandlers} from '@electron/main/LinuxAudioCapture';
 import {ensureLinuxDesktopEntry} from '@electron/main/LinuxDesktopEntry';
 import {cleanupDesktopLocalAppProtocol, getDesktopLocalAppProtocol} from '@electron/main/LocalAppProtocol';
@@ -107,8 +106,6 @@ import {
 	setQuitting,
 	showWindow,
 } from '@electron/main/Window';
-import {removeLegacySquirrelUninstallEntry} from '@electron/main/WindowsLegacyUninstallEntry';
-import {removeFluxerVulkanLayerRegistrations} from '@electron/main/WindowsVulkanLayerCleanup';
 import {
 	DESKTOP_CAPABILITY_MANIFEST_CHANNEL,
 	type DesktopCapabilityManifest,
@@ -529,16 +526,8 @@ if (launchConfigurationError) {
 				} catch (error: unknown) {
 					log.error('[Init] Failed to register native audio handlers:', error);
 				}
-				try {
-					runStartupPhase('vulkan-layer-cleanup', removeFluxerVulkanLayerRegistrations);
-				} catch (error: unknown) {
-					log.error('[Init] Failed to remove stale Vulkan layer registrations:', error);
-				}
-				try {
-					runStartupPhase('legacy-uninstall-entry-cleanup', removeLegacySquirrelUninstallEntry);
-				} catch (error: unknown) {
-					log.error('[Init] Failed to remove the legacy Squirrel uninstall entry:', error);
-				}
+
+
 				try {
 					runStartupPhase('native-hardware-encoder-handlers', registerNativeHardwareEncoderHandlers);
 				} catch (error: unknown) {
@@ -556,13 +545,7 @@ if (launchConfigurationError) {
 				} catch (error: unknown) {
 					log.error('[LocalApp] Failed to register the local app protocol handler:', error);
 				}
-				try {
-					await runStartupPhaseAsync('legacy-origin-harvest', () =>
-						initializeLegacyOriginHarvest(startupController.signal),
-					);
-				} catch (error: unknown) {
-					log.error('[LegacyHarvest] Legacy origin harvest failed:', error);
-				}
+
 				try {
 					runStartupPhase('runtime-config-ipc', registerDesktopRuntimeConfigHandlers);
 				} catch (error: unknown) {

@@ -86,7 +86,9 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   assert.equal(discovery.endpoints.api,url+'/vortex/api');
   const me=(await request('GET','/users/@me')).body;
   assert.equal(me.username,'alice.test');
+  const polling=client.refresh();
   const guild=(await request('POST','/guilds',{name:'Encrypted UI Space'})).body;
+  await polling;
   assert.equal(guild.name,'Encrypted UI Space');
   const channels=(await request('GET','/guilds/'+guild.id+'/channels')).body;
   assert.equal(channels.length,1);
@@ -98,6 +100,17 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   assert.equal((await request('GET','/channels/'+channel+'/messages')).body[0].content,'Edited locally');
   await request('PUT','/channels/'+channel+'/messages/'+message.id+'/reactions/'+encodeURIComponent('❤️')+'/@me');
   assert.equal((await request('GET','/channels/'+channel+'/messages')).body[0].reactions[0].count,1);
+  assert.equal((await request('GET','/premium/state')).body.effective.is_premium,true);
+  await request('POST','/users/@me/saved-messages',{channel_id:channel,message_id:message.id});
+  assert.equal((await request('GET','/users/@me/saved-messages')).body[0].message.content,'Edited locally');
+  const ratchetBeforeSearch=client.core.state.engine.snapshot();
+  const search=(await request('POST','/search/messages',{context_guild_id:guild.id,content:'Edited',has:[],page:1})).body;
+  assert.equal(search.total,1);assert.equal(search.messages[0].id,message.id);
+  assert.deepEqual(client.core.state.engine.snapshot(),ratchetBeforeSearch,'Archive search must not consume the live ratchet');
+  assert.equal((await request('POST','/search/messages',{context_guild_id:guild.id,content:'absent'})).body.total,0);
+  assert.equal((await request('GET','/channels/'+channel+'/messages/'+message.id+'/reactions/'+encodeURIComponent('❤️'))).body[0].id,me.id);
+  await request('DELETE','/users/@me/saved-messages/'+message.id);
+  assert.equal((await request('GET','/users/@me/saved-messages')).body.length,0);
   const gateway=new VortexGateway(url.replace('http:','ws:')+'/vortex/gateway');
   cleanup.push(()=>gateway.dispose());
   const packets=[];gateway.on('message',event=>packets.push(JSON.parse(event.data)));gateway.start();await delay(0);

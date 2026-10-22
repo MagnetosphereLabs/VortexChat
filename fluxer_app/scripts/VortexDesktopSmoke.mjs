@@ -34,7 +34,7 @@ try {
   const owner=await auth.login({url:origin,username:'desktop.owner',password});
   await auth.api(origin,'policy',{title:'Desktop test',signupUntil:0,createSpaces:'everyone',chatQuota:0,maxUpload:10485760},owner.token);
   desktop=spawn(resolve(process.env.VORTEX_DESKTOP_BINARY),['--remote-debugging-port=19342','--user-data-dir='+join(dir,'client'),'--password-store=gnome-libsecret'],
-    {env:{...process.env,ELECTRON_ENABLE_LOGGING:'1'},stdio:['ignore','pipe','pipe']});
+    {env:{...process.env,ELECTRON_ENABLE_LOGGING:'1',NODE_OPTIONS:'',XDG_CONFIG_HOME:join(dir,'client')},stdio:['ignore','pipe','pipe']});
   desktop.stdout.on('data',record);desktop.stderr.on('data',record);
   for(let i=0;i<120;i++){
     if(desktop.exitCode!==null)throw new Error('Desktop exited before opening: '+desktop.exitCode);
@@ -49,6 +49,8 @@ try {
   page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
   page.on('requestfailed',request=>errors.push('Request failed: '+request.url()));
   page.on('crash',()=>errors.push('Renderer crashed'));
+  await page.locator('[data-flx="auth.flow.client-intro.auth-client-welcome-step.button.continue"]').click({timeout:60000});
+  await page.locator('[data-flx="auth.flow.client-intro.auth-client-preferences-step.button.continue"]').click({timeout:30000});
   await page.locator('[data-flx="auth.flow.instance-selector.instance-picker-rows.button.add-instance"]').click({timeout:60000});
   await page.locator('[data-flx="auth.flow.instance-selector.form.submit"] input').fill(origin);
   await page.locator('[data-flx="auth.flow.instance-selector.button.continue"]').click();

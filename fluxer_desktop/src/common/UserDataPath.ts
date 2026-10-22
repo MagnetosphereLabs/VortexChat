@@ -15,9 +15,9 @@ interface UserDataPaths {
 type ChannelStorageDirectoryMap = Record<BuildChannel, string>;
 
 const channelStorageDirectoryMap: ChannelStorageDirectoryMap = {
-	stable: 'fluxer',
-	canary: 'fluxercanary',
-	development: 'fluxerdevelopment',
+	stable: 'vortex-chat',
+	canary: 'vortex-chat-canary',
+	development: 'vortex-chat-development',
 };
 
 class UserDataPathConflictError extends Error {

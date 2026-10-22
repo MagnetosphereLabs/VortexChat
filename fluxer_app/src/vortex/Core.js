@@ -255,10 +255,13 @@ let action = async (t, A = {}) => {
   if (value.friendIds) state.friendIds = new Set(value.friendIds);
   return value;
 };
-async function refreshRooms() {
-  const request = ++roomsGeneration;
+let roomRefreshQueue=Promise.resolve();
+function refreshRooms() {
+  const operation=roomRefreshQueue.then(refreshRoomsNow,refreshRoomsNow);
+  roomRefreshQueue=operation.catch(()=>{});return operation;
+}
+async function refreshRoomsNow() {
   let t = await action("rooms");
-  state.spaces = t.spaces;
   let A = new Map(state.rooms.map(e => [e.id, e]));
   let rooms = [];
   for (let e of t.rooms) try {
@@ -285,11 +288,10 @@ async function refreshRooms() {
   } catch (i) {
     sA(i.message);
   }
-  if (request !== roomsGeneration) return;
+  state.spaces = t.spaces;
   state.rooms = [...new Map(rooms.map(room => [room.id, room])).values()];
   state.room && !state.rooms.some(e => e.id === state.room) && (state.room = null), state.call && !state.rooms.some(e => e.id === state.call.room) && (await Ye()), de();
 }
-let roomsGeneration = 0;
 let preferenceWrites = Promise.resolve();
 async function savePreferences() {
   const contents = JSON.stringify(state.prefs);
@@ -826,8 +828,8 @@ async function connect(pair, root) {
   return state.me;
 }
 let synchronizing;
-function sync() {
-  if(synchronizing) return synchronizing;
+function sync(fresh=false) {
+  if(synchronizing) return fresh?synchronizing.then(()=>sync()):synchronizing;
   synchronizing=(async()=>{
     const directory=await action('directory');
     for(const user of directory.users) await verifyIdentity(user);
@@ -858,6 +860,28 @@ async function loadHistory(room, before) {
       state.cursors[room.id]=cursor; state.joinedAt[room.id]=joined;
     }
   });
+}
+// Read the authenticated archive without advancing or rewinding the live MLS state.
+async function* archiveEvents(room,signal) {
+  let after=0,ceiling=null;
+  const keys=await roomKeys(room);
+  while(true) {
+    signal?.throwIfAborted();
+    if(state.closed)throw new Error('Sign in to read this conversation');
+    const page=await action('events',{room:room.id,after,archive:true});
+    ceiling??=page.cursor;
+    if(!page.events.length)return;
+    for(const event of page.events) {
+      if(event.seq<=after)throw new Error('Invalid archive ordering');
+      after=event.seq;if(after>ceiling)return;
+      const body=event.body,key=body.keyId?keys.keys.get(body.keyId):keys.keys.values().next().value;
+      if(!key)throw new Error('Conversation keys are updating');
+      await verifySignature(event.sender,JSON.stringify({room:room.id,id:event.id,archive:body.archive,keyId:body.keyId,kind:event.kind}),body.signature);
+      const payload=JSON.parse(dec.decode(await open(key,un64(body.archive),room.id+':'+event.id)));
+      yield {...event,payload};
+    }
+    if(after>=ceiling||page.events.length<100)return;
+  }
 }
 async function* downloadChunks(file,signal) {
   if(!Number.isSafeInteger(file.size)||file.size<0||file.size>100*1024**3||!Number.isSafeInteger(file.parts)||file.parts!==Math.max(1,Math.ceil(file.size/1048576))) throw new Error('Invalid encrypted attachment');
@@ -947,5 +971,5 @@ function close() {
   state.keys.clear();state.messages.clear();
 }
 return {state,connect,sync,close,send,createRoom,removeMembers,upload,download,downloadChunks,loadHistory,
-  action,roomKeys,wrapKey,sign,verifySignature,savePreferences,withDeviceLock,syncRoom,mediaKey,command,inviteSpace,invitations,respondInvitation,updateMetadata};
+  action,roomKeys,wrapKey,sign,verifySignature,savePreferences,archiveEvents,withDeviceLock,syncRoom,mediaKey,command,inviteSpace,invitations,respondInvitation,updateMetadata};
 }

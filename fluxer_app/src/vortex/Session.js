@@ -12,7 +12,7 @@ export class VortexSession {
   }
   async open() {await this.core.connect(this.pair,await auth.restoreRoot(this.pair));await this.refresh();return this;}
   emit(type,data){for(const listener of this.listeners)listener(type,data);}
-  async refresh() {await this.core.sync();await this.ids.index(this.core.state);}
+  async refresh(fresh=false) {await this.core.sync(fresh);await this.ids.index(this.core.state);}
   currentUser(){const s=this.core.state;return userView(this.ids,s.users.find(u=>u.id===s.me.id)||s.me,s.me);}
   room(id){return this.core.state.rooms.find(room=>this.ids.get('channel',room.id)===id);}
   async ready(sessionId) {
@@ -49,7 +49,7 @@ export class VortexSession {
     return {id:await this.ids.add('attachment',file.id),filename:file.name,size:file.size,content_type:preview?file.type:'application/octet-stream',url:reference,proxy_url:preview?.url||reference,
       width:preview?.width||file.width||null,height:preview?.height||file.height||null,flags:0};
   }
-  async message(room,event,attachments=true) {
+  async message(room,event,attachments=true,includeReply=true) {
     const state=this.core.state;
     const payload=event.payload;
     const result={id:this.ids.get('message',event.id),channel_id:this.ids.get('channel',room.id),guild_id:room.space?this.ids.get('guild',room.space):undefined,
@@ -58,8 +58,11 @@ export class VortexSession {
       type:payload.reply?19:0,tts:false,mention_everyone:false,mentions:[],mention_roles:[],attachments:attachments?await Promise.all((payload.files||[]).map(file=>this.attachment(file))):[],
       embeds:[],sticker_items:[],flags:0,pinned:!!event.pinned,nonce:payload.nonce,
       reactions:[...event.reactions||[]].filter(([,people])=>people.size).map(([name,people])=>({count:people.size,me:people.has(state.me.id),emoji:{id:null,name,animated:false}}))};
+    const mentioned=new Set([...result.content.matchAll(/<@!?(\d+)>/gu)].map(match=>match[1]));
+    result.mentions=room.meta.members.map(id=>state.users.find(user=>user.id===id)||state.formerUsers?.find(user=>user.id===id)).filter(Boolean).map(user=>userView(this.ids,user)).filter(user=>mentioned.has(user.id));
     if(payload.reply) {
       try {result.message_reference={message_id:this.ids.get('message',payload.reply),channel_id:result.channel_id,guild_id:result.guild_id};}catch{}
+      if(includeReply){const target=materializeMessages(state,room).find(prior=>prior.id===payload.reply&&!prior.deleted);result.referenced_message=target?await this.message(room,target,attachments,false):null;}
     }
     return result;
   }
