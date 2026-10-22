@@ -75,17 +75,36 @@ export class VortexGateway {
       await new Promise(resolve=>{const done=()=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolve();};const timer=setTimeout(done,2000);signal.addEventListener('abort',done,{once:true});});
     }
   }
-  async refresh() {
-    if(this.refreshing||!this.session||this.readyState!==1)return;
-    this.refreshing=true;
-    try {
+  refresh(fresh=false) {
+    if(this.refreshing)return fresh?this.refreshing.then(()=>this.refresh()):this.refreshing;
+    if(!this.session||this.readyState!==1)return Promise.resolve();
+    this.refreshing=this.refreshNow().finally(()=>{this.refreshing=undefined;});
+    return this.refreshing;
+  }
+  async refreshNow() {
       await this.session.refresh();const {state}=this.session.core,ids=this.session.ids;
       for(const user of state.users) {
         const id=ids.get('user',user.id),status=user.status||'offline';
         if(this.presences.get(id)!==status){this.dispatch('PRESENCE_UPDATE',{user:{id},status,activities:[]});this.presences.set(id,status);}
       }
       const liveGuilds=new Set(),liveChannels=new Set();
-      for(const space of state.spaces){const guild=guildView(ids,state,space);liveGuilds.add(guild.id);if(!this.guilds.has(guild.id))this.dispatch('GUILD_CREATE',guild);this.guilds.set(guild.id,guild);}
+      for(const space of state.spaces) {
+        const guild=guildView(ids,state,space),previous=this.guilds.get(guild.id);liveGuilds.add(guild.id);
+        if(!previous)this.dispatch('GUILD_CREATE',guild);
+        else {
+          if(JSON.stringify(previous.properties)!==JSON.stringify(guild.properties)||previous.member_count!==guild.member_count)
+            this.dispatch('GUILD_UPDATE',{...guild.properties,member_count:guild.member_count});
+          const oldMembers=new Map(previous.members.map(member=>[member.user.id,member]));
+          for(const member of guild.members) {
+            const old=oldMembers.get(member.user.id);
+            if(!old)this.dispatch('GUILD_MEMBER_ADD',{...member,guild_id:guild.id});
+            else if(JSON.stringify(old)!==JSON.stringify(member))this.dispatch('GUILD_MEMBER_UPDATE',{...member,guild_id:guild.id});
+            oldMembers.delete(member.user.id);
+          }
+          for(const member of oldMembers.values())this.dispatch('GUILD_MEMBER_REMOVE',{guild_id:guild.id,user:member.user});
+        }
+        this.guilds.set(guild.id,guild);
+      }
       for(const [id]of this.guilds)if(!liveGuilds.has(id)){this.dispatch('GUILD_DELETE',{id});this.guilds.delete(id);}
       for(const room of state.rooms) {
         if(!this.session.visibleRoom(room))continue;
@@ -117,7 +136,6 @@ export class VortexGateway {
       const current=(await this.session.ready(this.sessionId)).relationships,newIds=new Set(current.map(r=>r.id));
       for(const relationship of current){if(JSON.stringify(this.relationships.get(relationship.id))!==JSON.stringify(relationship))this.dispatch('RELATIONSHIP_ADD',relationship);this.relationships.set(relationship.id,relationship);}
       for(const [id,relationship]of this.relationships)if(!newIds.has(id)){this.dispatch('RELATIONSHIP_REMOVE',relationship);this.relationships.delete(id);}
-    } finally {this.refreshing=false;}
   }
   async voice(request) {
     if(!this.session)return;

@@ -3,6 +3,7 @@ import {auth} from './vendor/auth.js';
 import {getSession,login,register,logout} from './Session.js';
 import {channelView,guildView,userView,materializeMessages,callView,freePremiumState} from './Projection.js';
 import {readConversationArchive,searchPrivateMessages} from './PrivateSearch.js';
+import {planChannelMoves} from './ChannelLayout.js';
 
 export function vortexOrigin(endpoint) {
   if(!endpoint)return null;
@@ -184,7 +185,9 @@ export async function vortexRequest(origin,method,path,options={},token) {
         if(body.bitrate!=null){await core.action('room.audio',{room:room.id,audio:body.bitrate/1000});room.audio=body.bitrate/1000;}
         await ids.index(state);data=channelView(ids,state,room);session.emit('CHANNEL_CREATE',data);
       } else if(method==='PATCH'&&Array.isArray(body)) {
-        const changes=body.map(item=>{const room=session.room(item.id);if(!room||room.space!==space)throw new Error('Channel unavailable');const {id,...values}=item;supportedChannelFields(values,['position','parent_id']);return {room,patch:channelPatch(session,room,values)};});
+        for(const {id,...values}of body)supportedChannelFields(values,['position','parent_id','preceding_sibling_id']);
+        const planned=planChannelMoves(state.rooms.filter(room=>room.space===space).map(room=>channelView(ids,state,room)),body);
+        const changes=planned.map(({id,...values})=>{const room=session.room(id);return {room,patch:channelPatch(session,room,values)};});
         for(const {room,patch}of changes)await core.updateMetadata(room,patch);
         await session.refresh(true);for(const {room}of changes)session.emit('CHANNEL_UPDATE',channelView(ids,state,session.room(ids.get('channel',room.id))));
         status=204;

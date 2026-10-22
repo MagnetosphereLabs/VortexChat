@@ -154,6 +154,8 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   assert.equal((await bobClient.core.invitations())[0].name,'Encrypted UI Space');
   await bobClient.core.respondInvitation(invitation,true);
   await client.refresh();await bobClient.refresh();
+  await gateway.refresh(true);
+  assert.ok(packets.some(packet=>packet.t==='GUILD_MEMBER_ADD'&&packet.d.guild_id===guild.id&&packet.d.user.id===bobClient.currentUser().id));
   const newRoom=client.room(channel);
   await client.core.send({type:'message',text:'After accepting an encrypted invitation'},'message',newRoom);
   await bobClient.refresh();
@@ -162,6 +164,8 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   await assert.rejects(bobClient.core.action('events',{room:newRoom.id,after:0}));
   await client.core.send({type:'message',text:'After Space ban'},'message',newRoom);
   assert.equal(client.core.command('members',newRoom.id).members.length,1);
+  await gateway.refresh(true);
+  assert.ok(packets.some(packet=>packet.t==='GUILD_MEMBER_REMOVE'&&packet.d.guild_id===guild.id&&packet.d.user.id===bobClient.currentUser().id));
 
   // Closing a DM hides it for this account without deleting shared history.
   const bobRequest=(method,path,body)=>vortexRequest(url,method,path,{body},bobLogin.body.token);

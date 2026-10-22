@@ -40,12 +40,8 @@ jobs:
         run: python3 scripts/test-publish-vortex-release.py
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Build encrypted web client
-        run: pnpm --filter fluxer_app build
-      - name: Check client types
-        id: types
-        continue-on-error: true
-        run: pnpm --filter fluxer_app typecheck:only
+      - name: Prepare pinned encryption modules
+        run: pnpm --filter fluxer_app vortex:vendor
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: MagnetosphereLabs/VortexNode
@@ -72,6 +68,12 @@ jobs:
         env:
           VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node
         run: pnpm --filter fluxer_app vortex:test
+      - name: Build encrypted web client
+        run: pnpm --filter fluxer_app build
+      - name: Check client types
+        id: types
+        continue-on-error: true
+        run: pnpm --filter fluxer_app typecheck:only
       - name: Install browser test tools
         timeout-minutes: 3
         run: |

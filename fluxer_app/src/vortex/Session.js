@@ -23,6 +23,7 @@ export class VortexSession {
   async ready(sessionId) {
     const state=this.core.state;
     const friends=(await this.core.action('friends')).friends;
+    await this.ids.index(state);
     return {session_id:sessionId,user:this.currentUser(),users:state.users.map(user=>userView(this.ids,user)),
       guilds:state.spaces.map(space=>guildView(this.ids,state,space)),private_channels:state.rooms.filter(room=>!room.space&&this.visibleRoom(room)).map(room=>channelView(this.ids,state,room)),
       relationships:friends.map(friend=>{const incoming=friend.user!==state.me.id;const id=incoming?friend.user:friend.other;return {id:this.ids.get('user',id),user:userView(this.ids,state.users.find(u=>u.id===id)),
@@ -57,7 +58,7 @@ export class VortexSession {
   async message(room,event,attachments=true,includeReply=true) {
     const state=this.core.state;
     const payload=event.payload;
-    const result={id:this.ids.get('message',event.id),channel_id:this.ids.get('channel',room.id),guild_id:room.space?this.ids.get('guild',room.space):undefined,
+    const result={id:this.ids.messageId(event),channel_id:this.ids.get('channel',room.id),guild_id:room.space?this.ids.get('guild',room.space):undefined,
       author:userView(this.ids,state.users.find(u=>u.id===event.sender)||state.formerUsers?.find(u=>u.id===event.sender)||{id:event.sender,username:'deleted-user'}),
       content:payload.text||'',timestamp:new Date(event.at*1000).toISOString(),edited_timestamp:event.editedAt?new Date(event.editedAt*1000).toISOString():null,
       type:payload.reply?19:0,tts:false,mention_everyone:false,mentions:[],mention_roles:[],attachments:attachments?await Promise.all((payload.files||[]).map(file=>this.attachment(file))):[],

@@ -5,21 +5,26 @@ import {auth} from './vendor/auth.js';
 export class VortexIds {
   forward=new Map(); reverse=new Map();
   async add(kind,id,event) {
+    if(event)return this.messageId(event);
     const key=kind+':'+id;
     if(this.forward.has(key))return this.forward.get(key);
     let numeric;
-    if(event) {
-      if(!Number.isSafeInteger(event.seq)||!Number.isSafeInteger(event.at))throw new Error('Invalid message ordering');
-      numeric=((BigInt(event.at)*1000n-1420070400000n)<<22n)|(BigInt(event.seq)&4194303n);
-    } else {
-      const hash=await auth.digest(auth.enc.encode('vortex-fluxer-v1:'+key));
-      numeric=BigInt('0x'+hash.slice(0,16))&0x7fffffffffffffffn;
-    }
+    const hash=await auth.digest(auth.enc.encode('vortex-fluxer-v1:'+key));
+    numeric=BigInt('0x'+hash.slice(0,16))&0x7fffffffffffffffn;
     if(numeric<=0n)throw new Error('Invalid projected identifier');
     const wire=numeric.toString();
     const prior=this.reverse.get(kind+':'+wire);
     if(prior&&prior!==id)throw new Error('Identifier collision. Refusing ambiguous data.');
     this.forward.set(key,wire);this.reverse.set(kind+':'+wire,id);return wire;
+  }
+  messageId(event) {
+    const known=this.forward.get('message:'+event.id);if(known)return known;
+    if(!event.id||!Number.isSafeInteger(event.seq)||!Number.isSafeInteger(event.at))throw new Error('Invalid message ordering');
+    const numeric=((BigInt(event.at)*1000n-1420070400000n)<<22n)|(BigInt(event.seq)&4194303n);
+    if(numeric<=0n)throw new Error('Invalid projected identifier');
+    const wire=numeric.toString(),prior=this.reverse.get('message:'+wire);
+    if(prior&&prior!==event.id)throw new Error('Identifier collision. Refusing ambiguous data.');
+    this.forward.set('message:'+event.id,wire);this.reverse.set('message:'+wire,event.id);return wire;
   }
   get(kind,id) {const wire=this.forward.get(kind+':'+id);if(!wire)throw new Error('Unknown '+kind);return wire;}
   raw(kind,wire) {const id=this.reverse.get(kind+':'+wire);if(!id)throw new Error('Unknown '+kind);return id;}
@@ -55,7 +60,7 @@ export function channelView(ids,state,room) {
     parent_id:room.meta.parent&&state.rooms.some(parent=>parent.id===room.meta.parent&&parent.space===room.space&&parent.meta.category===true)?ids.get('channel',room.meta.parent):null,position:room.meta.position||0,nsfw:room.meta.nsfw===true,rate_limit_per_user:0,permission_overwrites:[],
     bitrate:room.audio*1000,user_limit:0,owner_id:ids.get('user',room.creator),icon:null,
     recipients:room.space?undefined:room.meta.members.filter(id=>id!==state.me.id).map(id=>userView(ids,state.users.find(u=>u.id===id)||state.formerUsers?.find(u=>u.id===id)||{id,username:'deleted-user'})),
-    last_message_id:last?ids.get('message',last.id):null};
+    last_message_id:last?ids.messageId(last):null};
 }
 
 const memberPermissions=[0,6,9,10,11,14,15,16,18,20,21,25,54].reduce((value,bit)=>value|(1n<<BigInt(bit)),0n).toString();
