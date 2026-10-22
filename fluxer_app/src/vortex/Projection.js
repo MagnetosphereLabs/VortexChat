@@ -69,7 +69,7 @@ export function guildView(ids,state,space) {
   const id=ids.get('guild',space.id);
   const memberIds=[...new Set([space.creator,...channels.flatMap(room=>room.meta.members)])];
   return {id,properties:{id,name:channels[0]?.meta.spaceName||'Space',icon:null,banner:null,owner_id:ids.get('user',space.creator),
-    vanity_url_code:null,system_channel_id:null,features:['ANIMATED_ICON','ANIMATED_BANNER','BANNER','AUDIO_BITRATE_128_KBPS'],
+    vanity_url_code:null,system_channel_id:null,features:['VOICE_E2EE','ANIMATED_ICON','ANIMATED_BANNER','BANNER','AUDIO_BITRATE_128_KBPS'],
     verification_level:0,mfa_level:0,explicit_content_filter:0,default_message_notifications:1},
     channels:channels.map(room=>channelView(ids,state,room)),roles:[{id,name:'@everyone',color:0,hoist:false,position:0,
       permissions:memberPermissions,managed:false,mentionable:false}],

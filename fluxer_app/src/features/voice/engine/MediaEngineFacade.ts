@@ -885,14 +885,16 @@ class MediaEngineFacade extends Store {
 			}
 			previousRoom = room;
 			previousStatus = status;
-			if (!room || isVoiceMeshRoom(room)) return;
+			if (!room) return;
+			if (isVoiceMeshRoom(room) || status === 'broken') {
+				logger.error('Disconnecting a call with incompatible end-to-end encryption');
+				void room.disconnect();
+				return;
+			}
 			if (status === 'encrypted') {
 				void room.setE2EEEnabled(true).catch((error) => {
-					logger.warn('Failed to enable E2EE on room', error);
-				});
-			} else if (status === 'broken') {
-				void room.setE2EEEnabled(false).catch((error) => {
-					logger.warn('Failed to disable E2EE on room after capability mix detected', error);
+					logger.error('Disconnecting because call encryption could not be enabled', error);
+					void room.disconnect();
 				});
 			}
 		};

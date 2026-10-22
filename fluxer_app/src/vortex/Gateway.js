@@ -3,6 +3,7 @@ import {getSession} from './Session.js';
 import {verifyNode} from './Rest.js';
 import {auth} from './vendor/auth.js';
 import {channelView,guildView,materializeMessages,callView} from './Projection.js';
+import {mediaEndpoint} from './MediaEndpoint.js';
 
 export class VortexGateway {
   kind='browser';readyState=0;listeners=new Map();sequence=0;sessionId=crypto.randomUUID();seen=new Map();channels=new Map();guilds=new Map();relationships=new Map();voiceEvents=new Set();
@@ -158,10 +159,11 @@ export class VortexGateway {
     const response=await fetch(this.origin+'/chat/media',{method:'POST',headers:{Authorization:'Bearer '+this.session.pair.token,'Content-Type':'application/json'},
       body:JSON.stringify({room:room.id,device:state.device,client:'fluxer',connection})});
     const media=await response.json();if(!response.ok)throw new Error(media.error||'Calling is unavailable');
+    const endpoint=mediaEndpoint(media.url);
     const key=auth.b64(await core.mediaKey(room));
     this.session.voice={room:room.id,key};this.lastVoice=voice;
     this.dispatch('VOICE_STATE_UPDATE',{...voice,user_id:this.session.currentUser().id});
-    this.dispatch('VOICE_SERVER_UPDATE',{channel_id:voice.channel_id,guild_id:voice.guild_id,connection_id:connection,endpoint:media.url,token:media.token,e2ee_key:'vortex:'+voice.channel_id+':'+key});
+    this.dispatch('VOICE_SERVER_UPDATE',{channel_id:voice.channel_id,guild_id:voice.guild_id,connection_id:connection,endpoint,token:media.token,e2ee_key:'vortex:'+voice.channel_id+':'+key});
     await core.send({type:'call',state:'joined',voice},'call',room);
   }
   fail(error){this.emit('error',{error});this.close(error?.status===401?4004:4000,'Encrypted session interrupted');}

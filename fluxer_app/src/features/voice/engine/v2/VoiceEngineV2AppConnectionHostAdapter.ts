@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
-import Authentication from '@app/features/auth/state/Authentication';
 import {Logger} from '@app/features/platform/utils/AppLogger';
 import {
-	createVoiceMeshRoom,
 	holdVoiceMeshConversion,
 	isVoiceMeshRoom,
 } from '@app/features/voice/engine/mesh/VoiceMeshRoom';
@@ -183,7 +181,7 @@ function createRoomOptions(
 		try {
 			e2eeKeyProvider = createE2EEKeyProvider();
 			e2eeWorker = createE2EEWorker();
-			roomOptions.e2ee = {keyProvider: e2eeKeyProvider, worker: e2eeWorker};
+			roomOptions.encryption = {keyProvider: e2eeKeyProvider, worker: e2eeWorker};
 		} catch (error) {
 			logger.error('Failed to construct E2EE key provider/worker', error);
 			e2eeWorker?.terminate();
@@ -192,12 +190,6 @@ function createRoomOptions(
 		}
 	}
 	return {roomOptions, e2eeKeyProvider, e2eeWorker};
-}
-
-function requireCurrentUserId(): string {
-	const userId = Authentication.currentUserId;
-	assertNonEmptyString(userId, 'mesh room current user id');
-	return userId;
 }
 
 function createRoomConnectOptions(): RoomConnectOptions {
@@ -526,15 +518,7 @@ export class VoiceEngineV2AppConnectionHostAdapter extends Store {
 			return;
 		}
 		const {roomOptions, e2eeKeyProvider, e2eeWorker} = createRoomOptions(e2eeKey, subscriberVideoCodecExclusions);
-		const room = raw.ice_servers
-			? createVoiceMeshRoom(roomOptions, {
-					iceServers: raw.ice_servers,
-					guildId,
-					channelId: resolvedChannelId,
-					connectionId: raw.connection_id,
-					userId: requireCurrentUserId(),
-				})
-			: new LiveKitRoom(roomOptions);
+		const room = new LiveKitRoom(roomOptions);
 		ownE2EEWorker(room, e2eeWorker);
 		let roomClosed = false;
 		const closeRoom = () => {
@@ -667,18 +651,34 @@ export class VoiceEngineV2AppConnectionHostAdapter extends Store {
 		const connectionId = raw.connection_id ?? null;
 		this.abortHotSwap();
 		const cachedExclusions = getVideoDecoderExclusionsSync();
-		const roomOptions: RoomOptions = {
-			adaptiveStream: false,
-			dynacast: true,
-			webAudioMix: createWebAudioMixOption(),
-			publishDefaults: createRoomPublishDefaults(),
-			subscriberVideoCodecExclusions: cachedExclusions && cachedExclusions.length > 0 ? cachedExclusions : undefined,
-		};
+		const {roomOptions, e2eeKeyProvider, e2eeWorker} = createRoomOptions(
+			raw.e2ee_key ?? null,
+			cachedExclusions && cachedExclusions.length > 0 ? cachedExclusions : undefined,
+		);
+		if (!e2eeKeyProvider || !raw.e2ee_key) {
+			e2eeWorker?.terminate();
+			logger.error('Region hot-swap requires a locally derived encryption key');
+			return;
+		}
 		if (!this.isLatestConnectionAttempt(attemptId) || this.connectionState.room !== existingRoom) {
 			logger.warn('Region hot-swap: aborted before room creation because attempt is stale', {attemptId});
+			e2eeWorker?.terminate();
 			return;
 		}
 		const newRoom = new LiveKitRoom(roomOptions);
+		ownE2EEWorker(newRoom, e2eeWorker);
+		try {
+			await initializeVortexMediaKey(newRoom, e2eeKeyProvider, raw.e2ee_key);
+			await newRoom.setE2EEEnabled(true);
+		} catch (error) {
+			releaseE2EEWorker(newRoom);
+			logger.error('Region hot-swap encryption initialization failed', error);
+			return;
+		}
+		if (!this.isLatestConnectionAttempt(attemptId) || this.connectionState.room !== existingRoom) {
+			releaseE2EEWorker(newRoom);
+			return;
+		}
 		this.update(() => {
 			this.transitionConnection({type: 'hotSwap.start', pendingRoom: newRoom, previousRoom: existingRoom});
 		});
@@ -761,6 +761,7 @@ export class VoiceEngineV2AppConnectionHostAdapter extends Store {
 			})
 			.catch((error) => {
 				logger.error('Region hot-swap: failed to connect to new endpoint', {error, endpoint});
+				releaseE2EEWorker(newRoom);
 				onRoomClosed?.(newRoom, attemptId);
 				try {
 					newRoom.removeAllListeners();

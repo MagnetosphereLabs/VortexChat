@@ -6,13 +6,15 @@ import {initializeVortexMediaKey} from '../../src/features/voice/engine/VoiceE2E
 let room: Room;
 let worker: Worker;
 const received: RemoteTrack[] = [];
+const controls: string[] = [];
 const resources: Array<() => void> = [];
 
 const probe = {
   async join(input: {url: string; token: string; key: string}) {
     worker = new Worker('/worker.js', {type: 'module'});
     const keyProvider = new ExternalE2EEKeyProvider();
-    room = new Room({e2ee: {keyProvider, worker}, adaptiveStream: false, dynacast: false});
+    room = new Room({encryption: {keyProvider, worker}, adaptiveStream: false, dynacast: false});
+    room.on(RoomEvent.DataReceived, data => controls.push(new TextDecoder().decode(data)));
     room.on(RoomEvent.TrackSubscribed, track => {
       received.push(track);
       const element = track.attach();
@@ -47,6 +49,9 @@ const probe = {
     await room.localParticipant.publishTrack(video, {source: Track.Source.ScreenShare, simulcast: false, videoCodec: 'vp8'});
     await room.localParticipant.publishTrack(sound, {source: Track.Source.ScreenShareAudio, dtx: false});
   },
+  async control(value: string) {
+    await room.localParticipant.publishData(new TextEncoder().encode(value), {reliable: true, topic: 'vortex.screen-test'});
+  },
   async stats() {
     let packets = 0, frames = 0, energy = 0;
     for (const track of received) {
@@ -59,7 +64,7 @@ const probe = {
         }
       });
     }
-    return {packets, frames, energy, sources: received.map(track => track.source), state: room.state};
+    return {packets, frames, energy, controls, sources: received.map(track => track.source), state: room.state};
   },
   async close() {
     resources.splice(0).forEach(close => close());

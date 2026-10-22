@@ -99,14 +99,18 @@ try {
   await pages[0].evaluate(() => window.probe.publish());
   await waitFor(async () => {const stats = await pages[1].evaluate(() => window.probe.stats()); return stats.frames > 5 && stats.energy > 0 && stats.sources.includes('screen_share') && stats.sources.includes('screen_share_audio');}, 'Authorized participant did not decode encrypted video and shared audio', 30000);
   await waitFor(async () => (await pages[2].evaluate(() => window.probe.stats())).packets > 10, 'Observer did not receive enough ciphertext to exercise decryption rejection');
+  const control = 'private-screen-codec-' + crypto.randomUUID();
+  await pages[0].evaluate(value => window.probe.control(value), control);
+  await waitFor(async () => (await pages[1].evaluate(() => window.probe.stats())).controls.includes(control), 'Participant did not receive encrypted screen-share control data');
   const observer = await pages[2].evaluate(() => window.probe.stats());
+  assert.deepEqual(observer.controls, [], 'Relay observer received private screen-share control data');
   assert.equal(observer.frames, 0, 'Relay observer decoded video without the key');
   assert.equal(observer.energy, 0, 'Relay observer decoded audio without the key');
   await alice.action('space.member', {space, user: bob.state.me.id, banned: true, permissions: 0});
   await waitFor(async () => (await pages[1].evaluate(() => window.probe.stats())).state === 'disconnected', 'Removed participant remained in the media room');
   const revoked = await fetch(origin + '/chat/media', {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + bob.state.pair.token}, body: JSON.stringify({room: room.id, device: bob.state.device})});
   assert.equal(revoked.status, 403);
-  console.log('Encrypted screen video and audio decoded only by a participant; relay observer rejected; removed participant disconnected');
+  console.log('Encrypted screen video, audio and control data decoded only by a participant; relay observer rejected; removed participant disconnected');
 } catch (error) {
   // Relay credentials and participant JWTs must never appear in diagnostics.
   console.error(diagnostics.replaceAll(relaySecret, '[redacted]').split('\n').filter(line => !/token|authorization/i.test(line)).join('\n'));
