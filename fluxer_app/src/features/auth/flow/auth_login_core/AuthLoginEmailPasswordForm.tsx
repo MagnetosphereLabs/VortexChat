@@ -107,7 +107,7 @@ export default function AuthLoginEmailPasswordForm({
 				label="Authenticator or recovery code (if enabled)"
 				value={form.getValue('code') || ''}
 				onChange={(value) => form.setValue('code', value)}
-				error={form.getError('code')}
+				error={form.getError('code') || undefined}
 			/>}
 			{links ? (
 				<div className={linksWrapperClassName} data-flx="auth.flow.auth-login-core.auth-login-email-password-form.div">

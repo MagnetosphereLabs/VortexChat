@@ -11,6 +11,8 @@ import {
 } from '@app/features/app/components/dialogs/shared/RecipientList';
 import selectorStyles from '@app/features/app/components/dialogs/shared/SelectorModalStyles.module.css';
 import RuntimeConfig from '@app/features/app/state/RuntimeConfig';
+import {vortexOrigin} from '@app/vortex/Rest.js';
+import {SpaceInvitationModal} from '@app/vortex/SpaceInvitations';
 import type {Channel} from '@app/features/channel/models/Channel';
 import Channels from '@app/features/channel/state/Channels';
 import * as ChannelUtils from '@app/features/channel/utils/ChannelUtils';
@@ -559,6 +561,7 @@ export const InviteModal = observer(({channelId}: {channelId: string}) => {
 		return <InviteModalUnavailable data-flx="invite.invite-modal.invite-modal-unavailable--2" />;
 	}
 	const inviteCapability = InviteUtils.getInviteCapability(channelId, channel.guildId);
+	if (vortexOrigin(RuntimeConfig.apiEndpoint)) return <SpaceInvitationModal guildId={guild.id} name={guild.name} />;
 	return (
 		<InviteModalContent
 			channelId={channelId}

@@ -859,20 +859,25 @@ async function loadHistory(room, before) {
     }
   });
 }
-async function download(file) {
-  if(!Number.isSafeInteger(file.parts)||file.parts!==Math.max(1,Math.ceil(file.size/1048576))) throw new Error('Invalid encrypted attachment');
-  const key=await hkdf(un64(file.secret),'attachment:'+file.id);
-  const parts=[];
+async function* downloadChunks(file,signal) {
+  if(!Number.isSafeInteger(file.size)||file.size<0||file.size>100*1024**3||!Number.isSafeInteger(file.parts)||file.parts!==Math.max(1,Math.ceil(file.size/1048576))) throw new Error('Invalid encrypted attachment');
+  const secret=un64(file.secret);if(secret.length!==32)throw new Error('Invalid attachment key');
+  const key=await hkdf(secret,'attachment:'+file.id);
   for(let index=0;index<file.parts;index++) {
-    const response=await fetch(state.pair.url+'/chat/object/'+encodeURIComponent(file.id)+'/'+index,{headers:{Authorization:'Bearer '+state.pair.token}});
+    signal?.throwIfAborted();if(state.closed)throw new Error('Sign in to download this file');
+    const response=await fetch(state.pair.url+'/chat/object/'+encodeURIComponent(file.id)+'/'+index,{headers:{Authorization:'Bearer '+state.pair.token},signal:signal?AbortSignal.any([signal,AbortSignal.timeout(60000)]):AbortSignal.timeout(60000)});
     if(!response.ok) throw new Error('The attachment is unavailable');
     const encrypted=new Uint8Array(await response.arrayBuffer());
     if(encrypted.length>1048604) throw new Error('Invalid encrypted attachment size');
-    parts.push(await open(key,encrypted,file.id+':'+index));
+    const plain=await open(key,encrypted,file.id+':'+index);
+    if(plain.length!==Math.min(1048576,file.size-index*1048576))throw new Error('Attachment size mismatch');
+    yield plain;
   }
-  const result=new Blob(parts,{type:file.type||'application/octet-stream'});
-  if(result.size!==file.size) throw new Error('Attachment size mismatch');
-  return result;
+}
+async function download(file) {
+  if(file.size>64*1024**2)throw new Error('Use streaming download for this attachment');
+  const parts=[];for await(const part of downloadChunks(file))parts.push(part);
+  return new Blob(parts,{type:file.type||'application/octet-stream'});
 }
 function invitationSignature(id, space, user, rooms, label) {
   return JSON.stringify({id,space,user,rooms:rooms.map(item=>({room:item.room,creator:item.creator,base:item.base,box:item.box,sealed:item.sealed})),label});
@@ -941,6 +946,6 @@ function close() {
   state.engine?.free();state.engine=null;state.root=null;
   state.keys.clear();state.messages.clear();
 }
-return {state,connect,sync,close,send,createRoom,removeMembers,upload,download,loadHistory,
+return {state,connect,sync,close,send,createRoom,removeMembers,upload,download,downloadChunks,loadHistory,
   action,roomKeys,wrapKey,sign,verifySignature,savePreferences,withDeviceLock,syncRoom,mediaKey,command,inviteSpace,invitations,respondInvitation,updateMetadata};
 }

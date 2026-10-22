@@ -159,10 +159,19 @@ export async function vortexRequest(origin,method,path,options={},token) {
     else if(route==='/vortex/space-invites'&&method==='GET')data=(await core.invitations()).map(item=>({id:item.id,name:item.name,sender:state.users.find(u=>u.id===item.sender)?.username,channels:item.body.rooms.length}));
     else if(route==='/vortex/space-invites'&&method==='POST'){
       const target=state.users.find(user=>user.username===body.username);if(!target)throw new Error('No account has that username on this Node');
-      data={id:await core.inviteSpace(body.space,target.id)};
+      data={id:await core.inviteSpace(body.space||(body.guild_id&&ids.raw('guild',body.guild_id)),target.id)};
     }
     else if(route==='/vortex/space-invites'&&method==='PATCH'){await core.respondInvitation(body.id,body.accept===true);await session.refresh();status=204;}
     else if(route==='/vortex/storage'&&method==='GET')data=await core.action('admin.storage');
+    else if(['/users/@me/push/subscribe','/users/@me/push/rotate'].includes(route)&&method==='POST'){
+      await core.action('push',{endpoint:body.endpoint,p256dh:body.keys?.p256dh,auth:body.keys?.auth});
+      if(body.old_endpoint&&body.old_endpoint!==body.endpoint)await core.action('push.remove',{endpoint:body.old_endpoint});
+      data={subscription_id:(await auth.digest(auth.enc.encode(body.endpoint))).slice(0,32)};
+    } else if(route==='/users/@me/push/subscriptions'&&method==='GET'){
+      data={subscriptions:await Promise.all((await core.action('push.list')).endpoints.map(async endpoint=>({subscription_id:(await auth.digest(auth.enc.encode(endpoint))).slice(0,32),user_agent:null})))};
+    } else if((match=route.match(/^\/users\/@me\/push\/subscriptions\/([a-f0-9]{32})$/u))&&method==='DELETE'){
+      for(const endpoint of (await core.action('push.list')).endpoints)if((await auth.digest(auth.enc.encode(endpoint))).slice(0,32)===match[1])await core.action('push.remove',{endpoint});status=204;
+    }
     else if(route==='/users/@me/notes'&&method==='GET')data=state.prefs.notes||{};
     else if((match=route.match(/^\/users\/@me\/notes\/(\d+)$/u))&&method==='PUT'){state.prefs.notes??={};state.prefs.notes[match[1]]=body.note;await core.savePreferences();status=204;}
     else if(['/users/@me/connections','/users/@me/favorite-memes','/users/@me/saved-messages','/users/@me/gifts','/rtc/regions'].includes(route)&&method==='GET')data=[];

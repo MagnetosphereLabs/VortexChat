@@ -1,0 +1,6 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+.form { display: grid; gap: 1rem; }
+.invitations { margin: 1rem; padding: 1rem; border: 1px solid var(--background-modifier-accent); background: var(--background-secondary); border-radius: 0.75rem; }
+.invitation { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.5rem; }
+.label { display: grid; flex: 1; gap: 0.25rem; min-width: 10rem; }
+.label span { color: var(--text-secondary); font-size: 0.875rem; }

@@ -35,9 +35,9 @@ export class VortexIds {
 
 export function userView(ids,user,privateData) {
   const result={id:ids.get('user',user.id),username:user.username,discriminator:'0',global_name:user.display||user.username,
-    avatar:null,avatar_color:null,bot:false,system:false,flags:0};
+    avatar:null,avatar_color:null,bot:false,system:false,flags:0,traits:['premium'],premium_badge_hidden:true};
   if(!privateData)return result;
-  return {...result,is_staff:false,acls:[],traits:[],email:null,has_verified_phone:false,bio:null,pronouns:null,accent_color:null,
+  return {...result,is_staff:false,acls:[],email:null,has_verified_phone:false,bio:null,pronouns:null,accent_color:null,
     banner:null,banner_color:null,mfa_enabled:privateData.totp,verified:true,premium_type:0,premium_since:null,premium_until:null,
     premium_will_cancel:false,premium_billing_cycle:null,premium_lifetime_sequence:null,premium_grace_ends_at:null,
     premium_discriminator:false,premium_badge_hidden:true,premium_badge_masked:false,premium_badge_timestamp_hidden:true,

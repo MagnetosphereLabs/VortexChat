@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import {PRODUCT_NAME} from '@app/features/app/config/ProductConstants';
+import {receiveDownload, fetchDownload} from '@app/vortex/DownloadWorker';
 import {
 	getNotificationAlertOptions,
 	isMobileOrTabletUserAgent,
@@ -153,6 +154,7 @@ self.addEventListener('activate', (event: ExtendableEvent) => {
 });
 
 self.addEventListener('fetch', (event: FetchEvent) => {
+	if (fetchDownload(event, self.location.origin)) return;
 	const request = event.request;
 	const route = getWorkerFetchRoute(request, self.location.origin);
 	if (route === 'navigation') {
@@ -165,6 +167,7 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 });
 
 self.addEventListener('message', (event: ExtendableMessageEvent) => {
+	if (receiveDownload(event, self.location.origin)) return;
 	const data = isRecord(event.data) ? event.data : {};
 	const type = data?.type;
 	if (type === 'SKIP_WAITING') {

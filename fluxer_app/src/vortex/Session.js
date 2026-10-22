@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import {auth} from './vendor/auth.js';
 import {createVortexCore} from './Core.js';
+import {registerAttachment,unregisterAttachments} from './AttachmentDownloads.js';
 import {VortexIds,channelView,guildView,userView,materializeMessages} from './Projection.js';
 
 export class VortexSession {
-  ids=new VortexIds();listeners=new Set();attachmentUrls=new Map();voice=null;
+  ids=new VortexIds();listeners=new Set();attachmentUrls=new Map();attachmentReferences=new Map();previewBytes=0;voice=null;
   constructor(pair) {
     this.pair=pair;
     this.core=createVortexCore({notice:message=>this.emit('VORTEX_NOTICE',{message}),mediaEpochChanged:()=>this.updateMediaEpoch()});
@@ -25,14 +26,18 @@ export class VortexSession {
       rtc_regions:[],notes:{},pinned_dms:[],favorite_memes:[],webauthn_credentials:[]};
   }
   async attachment(file) {
+    let reference=this.attachmentReferences.get(file.id);
+    if(!reference){reference=registerAttachment(this,file);this.attachmentReferences.set(file.id,reference);}
     let pending=this.attachmentUrls.get(file.id);
-    if(!pending) {
+    const previewable=/^image\/(png|jpeg|webp|gif|avif)$/u.test(file.type)&&file.size<=8*1024**2;
+    if(!pending&&previewable&&this.previewBytes+file.size<=32*1024**2) {
+      this.previewBytes+=file.size;
       pending=this.core.download(file).then(blob=>URL.createObjectURL(blob));
       this.attachmentUrls.set(file.id,pending);
-      pending.catch(()=>this.attachmentUrls.delete(file.id));
+      pending.catch(()=>{this.attachmentUrls.delete(file.id);this.previewBytes-=file.size;});
     }
-    const url=await pending;
-    return {id:await this.ids.add('attachment',file.id),filename:file.name,size:file.size,content_type:file.type,url,proxy_url:url,
+    const preview=pending?await pending.catch(()=>null):null;
+    return {id:await this.ids.add('attachment',file.id),filename:file.name,size:file.size,content_type:preview?file.type:'application/octet-stream',url:reference,proxy_url:preview||reference,
       width:file.width||null,height:file.height||null,flags:0};
   }
   async message(room,event,attachments=true) {
@@ -68,7 +73,7 @@ export class VortexSession {
     const key=auth.b64(await this.core.mediaKey(room));
     if(key!==this.voice.key){this.voice.key=key;this.emit('VORTEX_MEDIA_KEY',{key});}
   }
-  close(){this.core.close();for(const pending of this.attachmentUrls.values())pending.then(URL.revokeObjectURL,()=>{});this.attachmentUrls.clear();this.listeners.clear();}
+  close(){unregisterAttachments(this);this.core.close();for(const pending of this.attachmentUrls.values())pending.then(URL.revokeObjectURL,()=>{});this.attachmentUrls.clear();this.attachmentReferences.clear();this.listeners.clear();}
 }
 
 const sessions=new Map();

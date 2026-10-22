@@ -532,6 +532,10 @@ const api: ElectronAPI = {
 		ipcRenderer.invoke('mac-tcc:request', 'screen-recording'),
 	downloadFile: (url: string, defaultPath: string, sha256?: string | null): Promise<DownloadFileResult> =>
 		ipcRenderer.invoke('download-file', {url, defaultPath, sha256}),
+	vortexDownloadStart: (name: string, size: number): Promise<string | null> => ipcRenderer.invoke('vortex-download-start', name, size),
+	vortexDownloadChunk: (id: string, chunk: Uint8Array): Promise<void> => ipcRenderer.invoke('vortex-download-chunk', id, chunk),
+	vortexDownloadFinish: (id: string): Promise<void> => ipcRenderer.invoke('vortex-download-finish', id),
+	vortexDownloadAbort: (id: string): Promise<void> => ipcRenderer.invoke('vortex-download-abort', id),
 	passkeyIsSupported: (): Promise<boolean> => ipcRenderer.invoke('passkey-is-supported'),
 	passkeyAuthenticate: (
 		options: PublicKeyCredentialRequestOptionsJSON,

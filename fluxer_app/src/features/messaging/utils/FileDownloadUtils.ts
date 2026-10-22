@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import RuntimeConfig from '@app/features/app/state/RuntimeConfig';
+import {downloadVortexAttachment} from '@app/vortex/AttachmentDownloads.js';
 import AttachmentUrlRefresher from '@app/features/messaging/state/AttachmentUrlRefresher';
 import {isUrlOnEndpoint, parseEndpoint} from '@app/features/messaging/utils/AttachmentCdnUrl';
 import {
@@ -197,6 +198,7 @@ function downloadViaAnchor(src: string, suggestedName: string, options?: {append
 export async function downloadFile(src: string, type: MediaType, providedFilename?: string): Promise<void> {
 	if (!src) return;
 	const suggestedName = deriveSuggestedName(src, type, providedFilename);
+	if (await downloadVortexAttachment(unwrapDesktopLocalResourceURL(src), suggestedName)) return;
 	const target = wrapDesktopLocalResourceURL(await AttachmentUrlRefresher.refresh(unwrapDesktopLocalResourceURL(src)));
 	if (isElectron()) {
 		try {

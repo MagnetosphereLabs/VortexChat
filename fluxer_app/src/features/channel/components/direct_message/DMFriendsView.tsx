@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import {reportSkeletonFriendsHeaderLayout} from '@app/features/app/components/skeleton/SkeletonLayoutMemory';
+import {SpaceInvitations} from '@app/vortex/SpaceInvitations';
 import {measureSkeletonWidthPx, useSkeletonLayoutReport} from '@app/features/app/hooks/useSkeletonLayoutMemoryCapture';
 import {ActiveNowSidebar} from '@app/features/channel/components/active_now/ActiveNowSidebar';
 import {ChannelHeader} from '@app/features/channel/components/ChannelHeader';
@@ -290,6 +291,7 @@ export const DMFriendsView: React.FC = observer(() => {
 					data-flx="channel.direct-message.dm-friends-view.channel-header"
 				/>
 				<div className={styles.content} data-flx="channel.direct-message.dm-friends-view.content">
+					<SpaceInvitations />
 					{showSearchBar && (
 						<div className={styles.searchWrapper} data-flx="channel.direct-message.dm-friends-view.search-wrapper">
 							<Input

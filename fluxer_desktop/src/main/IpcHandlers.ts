@@ -31,6 +31,7 @@ import {
 } from '@electron/main/DesktopTray';
 import {getDesktopUpdateState, observeDesktopUpdateState, startDesktopUpdate} from '@electron/main/DesktopUpdateGate';
 import {DownloadChecksumError, downloadFile} from '@electron/main/FileDownloads';
+import {registerVortexDownloads} from '@electron/main/VortexDownloads';
 import {getGatewayOriginRegistry} from '@electron/main/GatewayOriginRegistry';
 import {retryBlockedGlobalShortcutHooks} from '@electron/main/GlobalShortcutsIpc';
 import {
@@ -176,6 +177,7 @@ function applyUnreadBadge(badge: number): void {
 }
 
 export function registerIpcHandlers(): void {
+	registerVortexDownloads();
 	registerVoiceDebugEventSinkPopoutIpcHandlers();
 	registerVoiceBackgroundMediaCacheHandlers();
 	ipcMain.handle(DESKTOP_MODULE_CHANNELS.ensure, (event, moduleName: unknown) => {

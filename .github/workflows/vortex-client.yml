@@ -18,6 +18,9 @@ jobs:
       CARGO_INCREMENTAL: '0'
       CARGO_PROFILE_DEV_DEBUG: '0'
       NODE_OPTIONS: --max-old-space-size=6144
+      PUBLIC_BUILD_VERSION: 0.1.0
+      PUBLIC_BUILD_SHA: ${{ github.sha }}
+      PUBLIC_RELEASE_CHANNEL: stable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
@@ -39,11 +42,25 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: MagnetosphereLabs/VortexNode
-          ref: 7cb5c82160255feaecf5e47d6500a111381838a8
+          ref: 251b151da0815b3d698caf906dfb6cbcacea8631
           path: node-server
           persist-credentials: false
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        id: node-cache
+        with:
+          path: |
+            node-server/target
+            ~/.cargo/registry
+          key: vortex-node-linux-rust199-${{ hashFiles('node-server/Cargo.lock') }}
       - name: Build the matching Node
         run: cargo build --locked --manifest-path node-server/Cargo.toml
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        if: steps.node-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            node-server/target
+            ~/.cargo/registry
+          key: ${{ steps.node-cache.outputs.cache-primary-key }}
       - name: Verify encrypted client flows against Node
         env:
           VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node

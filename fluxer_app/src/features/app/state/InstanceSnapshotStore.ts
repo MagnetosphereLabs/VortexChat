@@ -94,6 +94,7 @@ function readInstanceLimits(limits: LimitConfigSnapshot | LimitConfigWireFormat)
 export function runtimeSnapshotFromDiscovery(document: InstanceDiscoveryDocument): RuntimeConfigSnapshot {
 	const discovery = projectClientRuntimeDiscovery(document);
 	const endpoints = discovery.endpoints;
+	const nodeLimits = readInstanceLimits(discovery.limits).rules[0]?.limits;
 	if (!new URL(endpoints.apiEndpoint).pathname.endsWith('/vortex/api')) {
 		throw new Error('Choose a Vortex Node. This client requires the Vortex encryption protocol.');
 	}
@@ -119,7 +120,8 @@ export function runtimeSnapshotFromDiscovery(document: InstanceDiscoveryDocument
 		community: discovery.community,
 		services: discovery.services,
 		publicPushVapidKey: discovery.push.public_vapid_key,
-		limits: {traitDefinitions: [], rules: [{id: 'vortex-free', limits: {...DEFAULT_STOCK_LIMITS, ...readInstanceLimits(discovery.limits).rules[0]?.limits}}]},
+		limits: {traitDefinitions: ['premium'], rules: [{id: 'vortex-free', limits: {...DEFAULT_STOCK_LIMITS,
+			max_attachment_file_size: nodeLimits?.max_attachment_file_size ?? DEFAULT_STOCK_LIMITS.max_attachment_file_size}}]},
 		appPublic: discovery.appPublic,
 		agePolicy: discovery.agePolicy,
 		domainMigration: discovery.domainMigration,
