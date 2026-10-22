@@ -3,22 +3,22 @@
 import {BUILD_CHANNEL, type BuildChannel} from '@electron/common/BuildChannel';
 
 const DESKTOP_APP_NAMES: Record<BuildChannel, string> = {
-	stable: 'Fluxer',
-	canary: 'Fluxer Canary',
-	development: 'Fluxer Development',
+	stable: 'Vortex Chat',
+	canary: 'Vortex Chat Preview',
+	development: 'Vortex Chat Development',
 };
 const MACOS_BUNDLE_IDS: Record<BuildChannel, string> = {
-	stable: 'app.fluxer',
+	stable: 'org.magnetospherelabs.vortexchat',
 	canary: 'app.fluxer.canary',
 	development: 'app.fluxer.development',
 };
 const LINUX_DESKTOP_ENTRY_IDS: Record<BuildChannel, string> = {
-	stable: 'app.fluxer.FluxerDesktop',
+	stable: 'org.magnetospherelabs.VortexChat',
 	canary: 'app.fluxer.FluxerDesktopCanary',
 	development: 'app.fluxer.FluxerDesktopDevelopment',
 };
 const LEGACY_LINUX_DESKTOP_ENTRY_IDS: Record<BuildChannel, string> = {
-	stable: 'fluxer',
+	stable: 'vortex-chat',
 	canary: 'fluxer-canary',
 	development: 'fluxer-development',
 };
@@ -33,7 +33,7 @@ const WINDOWS_VELOPACK_IDS: Record<BuildChannel, string> = {
 	development: 'fluxer_desktop_development',
 };
 const WINDOWS_APP_USER_MODEL_IDS: Record<BuildChannel, string> = {
-	stable: 'Fluxer.Fluxer',
+	stable: 'VortexChat.VortexChat',
 	canary: 'Fluxer.Fluxer.Canary',
 	development: 'Fluxer.Fluxer.Development',
 };
@@ -49,7 +49,7 @@ export const LINUX_DESKTOP_ENTRY_ID = LINUX_DESKTOP_ENTRY_IDS[BUILD_CHANNEL];
 export const LINUX_PORTAL_SESSION_TOKEN = LINUX_PORTAL_SESSION_TOKENS[BUILD_CHANNEL];
 export const LEGACY_LINUX_DESKTOP_ENTRY_ID = LEGACY_LINUX_DESKTOP_ENTRY_IDS[BUILD_CHANNEL];
 export const LINUX_ICON_NAME = LEGACY_LINUX_DESKTOP_ENTRY_IDS[BUILD_CHANNEL];
-export const WINDOWS_SHORTCUT_AUTHOR = 'Fluxer Platform AB';
+export const WINDOWS_SHORTCUT_AUTHOR = 'Magnetosphere Labs';
 export const WINDOWS_VELOPACK_ID = WINDOWS_VELOPACK_IDS[BUILD_CHANNEL];
 export const WINDOWS_LEGACY_SQUIRREL_ID = 'fluxer_app';
 export const WINDOWS_APP_USER_MODEL_ID = WINDOWS_APP_USER_MODEL_IDS[BUILD_CHANNEL];

@@ -1,3 +1,4 @@
+import {IS_OFFLINE_BUILD} from '@electron/common/OfflineBuild';
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import fs from 'node:fs';
@@ -600,7 +601,7 @@ if (launchConfigurationError) {
 						showWindow,
 					});
 				});
-				if (process.env.FLUXER_OFFLINE !== '1' && !shouldDisableModuleUpdatesForLaunch()) {
+				if (!IS_OFFLINE_BUILD && !shouldDisableModuleUpdatesForLaunch()) {
 					const {registerUpdater} = await import('@electron/main/Updater');
 					registerUpdater(getMainWindow);
 				}

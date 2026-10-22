@@ -1,0 +1,68 @@
+name: Vortex Linux
+on:
+  push:
+    branches: [main, 'vortex/**']
+    paths:
+      - 'fluxer_desktop/**'
+      - '.github/workflows/vortex-linux.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      NODE_OPTIONS: --max-old-space-size=6144
+      BUILD_CHANNEL: stable
+      PUBLIC_RELEASE_CHANNEL: stable
+      PUBLIC_BUILD_VERSION: 0.1.0
+      BUILD_VERSION: 0.1.0
+      FLUXER_DESKTOP_PRODUCTION: 'true'
+      FLUXER_OFFLINE: '1'
+      FLUXER_MODULES: '0'
+      FLUXER_ELECTRON_DIST: ${{ github.workspace }}/electron-runtime
+      USE_SYSTEM_FPM: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - name: Install locked build tool versions
+        run: |
+          npm install --global pnpm@11.27.0
+          rustup toolchain install 1.99.1 --profile minimal --target wasm32-unknown-unknown
+          rustup default 1.99.1
+          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install Linux audio and desktop build libraries
+        run: tools/ci/run.sh build-desktop --step install_linux_deps
+      - name: Verify encrypted desktop database
+        run: cargo test --locked --manifest-path fluxer_desktop/native/app-store/Cargo.toml
+      - name: Build the bundled renderer
+        run: pnpm --filter fluxer_app build:desktop
+      - name: Build native desktop integrations
+        run: pnpm --filter fluxer_desktop build
+      - name: Fetch pinned patched Electron runtime
+        run: |
+          mkdir electron-runtime
+          cd electron-runtime
+          curl --fail --location --retry 3 -O https://github.com/fluxerapp/fluxer/releases/download/desktop-electron-runtime-44.9.1-fluxer.1/electron-v44.9.1-linux-x64.zip
+          curl --fail --location --retry 3 -O https://github.com/fluxerapp/fluxer/releases/download/desktop-electron-runtime-44.9.1-fluxer.1/electron-v44.9.1-linux-x64.fluxer.json
+          sha256sum --check <<'CHECKSUMS'
+          ae36cae3dd723d94b414302598014beb6230a0c596ac6dc7a2dc95a6198a2568  electron-v44.9.1-linux-x64.zip
+          7eb2c5207392dc20e3a600b4608e1a9cdcbdfd0a9ad85a0b7f414906611733e9  electron-v44.9.1-linux-x64.fluxer.json
+          CHECKSUMS
+      - name: Package AppImage
+        working-directory: fluxer_desktop
+        run: pnpm exec electron-builder --linux AppImage --x64 --config electron-builder.config.cjs --config.extraMetadata.version=0.1.0 --publish never
+      - name: Hash Linux artifacts
+        run: find fluxer_desktop -maxdepth 3 -name '*.AppImage' -exec sha256sum {} + > Linux-SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vortex-chat-linux-x64
+          path: |
+            fluxer_desktop/**/*.AppImage
+            Linux-SHA256SUMS
+          retention-days: 14

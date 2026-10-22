@@ -9,8 +9,8 @@ import {
 } from '@fluxer/desktop_ipc/src/LocalAppRouteContract';
 
 export const CHANNEL_APP_PROTOCOLS: Record<BuildChannel, string> = {
-	stable: 'fluxer',
-	canary: 'fluxer',
+	stable: 'vortexchat',
+	canary: 'vortexchat',
 	development: 'fluxer-development',
 };
 export const APP_PROTOCOL = CHANNEL_APP_PROTOCOLS[BUILD_CHANNEL];
@@ -24,8 +24,8 @@ export const CHANNEL_APP_URLS: Record<BuildChannel, string> = {
 };
 export const LOCAL_DEVELOPMENT_INSTANCE_URL = BUILD_CHANNEL === 'development' ? DEVELOPMENT_APP_URL : null;
 export const DOWNLOAD_PAGE_URLS: Record<BuildChannel, string> = {
-	stable: 'https://fluxer.app/download',
-	canary: 'https://canary.fluxer.app/download',
+	stable: 'https://github.com/MagnetosphereLabs/VortexChat/releases',
+	canary: 'https://github.com/MagnetosphereLabs/VortexChat/releases',
 	development: 'http://localhost:8088/download',
 };
 export const STABLE_MIGRATED_APP_ORIGIN = 'https://fluxer.com';
