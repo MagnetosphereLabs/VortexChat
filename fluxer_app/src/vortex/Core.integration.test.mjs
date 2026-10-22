@@ -104,6 +104,16 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   const channels=(await request('GET','/guilds/'+guild.id+'/channels')).body;
   assert.equal(channels.length,1);
   const channel=channels[0].id;
+  const category=(await request('POST','/guilds/'+guild.id+'/channels',{name:'Encrypted category',type:4})).body;
+  assert.equal(category.type,4);
+  await request('PATCH','/guilds/'+guild.id+'/channels',[{id:channel,parent_id:category.id,position:1}]);
+  assert.equal((await request('GET','/channels/'+channel)).body.parent_id,category.id);
+  await assert.rejects(request('PATCH','/channels/'+channel,{permission_overwrites:[{id:guild.id,type:0,allow:'0',deny:'1024'}]}));
+  const count=client.core.state.rooms.length;
+  await assert.rejects(request('POST','/guilds/'+guild.id+'/channels',{name:'Must not be created as public',type:0,permission_overwrites:[{id:guild.id,type:0,allow:'0',deny:'1024'}]}));
+  assert.equal(client.core.state.rooms.length,count);
+  await assert.rejects(request('PATCH','/channels/'+category.id,{parent_id:category.id}));
+
   const message=(await request('POST','/channels/'+channel+'/messages',{content:'Through Fluxer',nonce:'test-nonce'})).body;
   assert.equal(message.content,'Through Fluxer');
   assert.equal((await request('POST','/channels/'+channel+'/messages',{content:'Through Fluxer',nonce:'test-nonce'})).body.id,message.id);
@@ -152,6 +162,25 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   await assert.rejects(bobClient.core.action('events',{room:newRoom.id,after:0}));
   await client.core.send({type:'message',text:'After Space ban'},'message',newRoom);
   assert.equal(client.core.command('members',newRoom.id).members.length,1);
+
+  // Closing a DM hides it for this account without deleting shared history.
+  const bobRequest=(method,path,body)=>vortexRequest(url,method,path,{body},bobLogin.body.token);
+  await request('POST','/users/@me/relationships',{username:'bob.testxx'});
+  await bobRequest('PUT','/users/@me/relationships/'+me.id,{type:1});
+  await client.refresh(true);
+  const bobId=bobClient.currentUser().id;
+  const dm=(await request('POST','/users/@me/channels',{recipients:[bobId]})).body;
+  await bobClient.refresh(true);
+  const direct=(await request('POST','/channels/'+dm.id+'/messages',{content:'Retained private conversation'})).body;
+  await request('DELETE','/channels/'+dm.id);
+  assert.equal((await request('GET','/users/@me/channels')).body.some(channel=>channel.id===dm.id),false);
+  await bobClient.refresh(true);
+  assert.equal((await bobRequest('GET','/channels/'+dm.id+'/messages')).body[0].id,direct.id);
+  assert.equal((await request('POST','/users/@me/channels',{recipients:[bobId]})).body.id,dm.id);
+  await request('DELETE','/channels/'+dm.id);
+  await bobRequest('POST','/channels/'+dm.id+'/messages',{content:'A new message reopens the conversation'});
+  await client.refresh(true);
+  assert.equal((await request('GET','/users/@me/channels')).body.some(channel=>channel.id===dm.id),true);
 
   // Disabling an account also revokes its active authentication token.
   await auth.api(url,'admin.user',{user:bobPair.id,disabled:true,quota:1024},owner.token);

@@ -28,14 +28,16 @@ jobs:
           node-version: '24'
       - name: Install build tools
         run: |
-          for sources in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
-            if [ -f "$sources" ]; then sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$sources"; fi
+          for sources in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources /etc/apt/apt-mirrors.txt; do
+            if [ -f "$sources" ]; then sudo sed -i -e 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' -e 's|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' -e 's|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g' "$sources"; fi
           done
           npm install --global pnpm@11.27.0
           rustup toolchain install 1.99.1 --profile minimal --target wasm32-unknown-unknown
           rustup default 1.99.1
           sudo apt-get update
           sudo apt-get install --yes clang lld pkg-config
+      - name: Check release qualification rules
+        run: python3 scripts/test-publish-vortex-release.py
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build encrypted web client
@@ -47,7 +49,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: MagnetosphereLabs/VortexNode
-          ref: 42fbb885876e6677a245b1afddc4938ebce22cf1
+          ref: 32caef0c3c40205138f48a751045b166c46bab68
           path: node-server
           persist-credentials: false
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9

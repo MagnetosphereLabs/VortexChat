@@ -694,7 +694,9 @@ async function createRoom(t, A = {}) {
     r = await hkdf(s, "archive:" + a),
     g = {
       name: i,
-      spaceName: o
+      spaceName: o,
+      category: A.category===true,
+      parent: A.parent||null
     },
     c = [...new Set([state.me.id, ...e.filter(d => d !== state.me.id)])],
     I = [];
@@ -953,7 +955,7 @@ async function respondInvitation(id,accept) {
   if(accept){state.prefs.conversations??={};Object.assign(state.prefs.conversations,pins);await savePreferences();await sync();}
 }
 async function updateMetadata(room,patch) {
-  const allowed=['name','topic','position','spaceName'];
+  const allowed=['name','topic','position','spaceName','parent','nsfw'];
   const meta={...room.meta};for(const key of allowed)if(patch[key]!==undefined)meta[key]=patch[key];
   const keys=await roomKeys(room);
   await action('room.metadata',{room:room.id,sealed:b64(await seal(keys.key,enc.encode(JSON.stringify(meta)),room.id))});

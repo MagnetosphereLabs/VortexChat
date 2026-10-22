@@ -1,0 +1,27 @@
+name: Vortex release candidate
+on:
+  push:
+    branches: [main, 'vortex/**']
+    paths: ['release-request.json']
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: vortex-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'MagnetosphereLabs/VortexChat'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check release qualification rules
+        run: python3 scripts/test-publish-vortex-release.py
+      - name: Verify selected builds and publish their original artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/publish-vortex-release.py

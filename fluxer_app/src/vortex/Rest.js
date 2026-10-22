@@ -23,6 +23,33 @@ export async function verifyNode(origin) {
   return pending;
 }
 function unsupported(path){throw Object.assign(new Error('This operation is not available on this Vortex Node client yet'),{status:501,code:'VORTEX_UNSUPPORTED_OPERATION'});}
+// Reject unsupported settings before changing anything. In particular, private
+// channel permissions must never appear to save while admitting every member.
+function supportedChannelFields(body,keys) {
+  for(const [key,value]of Object.entries(body)) {
+    if(value==null||keys.includes(key))continue;
+    if(key==='permission_overwrites'&&Array.isArray(value)&&!value.length)continue;
+    if(['lock_permissions','user_limit','voice_connection_limit'].includes(key)&&!value)continue;
+    unsupported('/channels/settings/'+key);
+  }
+}
+function parentRoom(session,space,parentId) {
+  if(parentId==null)return null;
+  const parent=session.room(parentId);
+  if(!parent||parent.space!==space||parent.meta.category!==true)throw new Error('Choose a category in this Space');
+  return parent.id;
+}
+function channelPatch(session,room,body) {
+  supportedChannelFields(body,['name','topic','position','parent_id','nsfw','bitrate']);
+  const patch={name:body.name,topic:body.topic,position:body.position,nsfw:body.nsfw};
+  if(body.name!==undefined&&(typeof body.name!=='string'||!body.name.trim()||body.name.length>100))throw new Error('Enter a channel name of at most 100 characters');
+  if(body.topic!=null&&(typeof body.topic!=='string'||body.topic.length>4096))throw new Error('Channel topic is too long');
+  if(body.position!==undefined&&(!Number.isSafeInteger(body.position)||body.position<0||body.position>10000))throw new Error('Invalid channel position');
+  if(body.nsfw!==undefined&&typeof body.nsfw!=='boolean')throw new Error('Invalid channel setting');
+  if(body.parent_id!==undefined){if(room.meta.category&&body.parent_id!==null)throw new Error('Categories cannot be nested');patch.parent=parentRoom(session,room.space,body.parent_id);}
+  if(body.bitrate!=null&&(room.kind!=='voice'||![32000,64000,128000].includes(body.bitrate)))unsupported('/channels/bitrate');
+  return patch;
+}
 const activeSends=new Map();
 async function sendMessage(session,room,body,files) {
   const key=session.pair.url+':'+session.pair.id+':'+room.id+':'+body.nonce;
@@ -112,11 +139,12 @@ export async function vortexRequest(origin,method,path,options={},token) {
       if(method==='PATCH') {state.prefs.fluxer={...state.prefs.fluxer,...body};await core.savePreferences();session.emit('USER_SETTINGS_UPDATE',state.prefs.fluxer);}
       else if(method!=='GET')unsupported(route);
       data=state.prefs.fluxer||{};
-    } else if(route==='/users/@me/channels'&&method==='GET')data=state.rooms.filter(room=>!room.space).map(room=>channelView(ids,state,room));
+    } else if(route==='/users/@me/channels'&&method==='GET')data=state.rooms.filter(room=>!room.space&&session.visibleRoom(room)).map(room=>channelView(ids,state,room));
     else if(route==='/users/@me/channels'&&method==='POST') {
       const recipients=(body.recipients||[body.recipient_id]).filter(Boolean).map(id=>ids.raw('user',id));
       const existing=recipients.length===1&&state.rooms.find(room=>room.kind==='dm'&&room.meta.members.includes(recipients[0]));
       const room=existing||await core.createRoom(recipients.length===1?'dm':'group',{name:body.name||state.users.find(u=>u.id===recipients[0])?.display||'Group chat',members:recipients,space:'',background:true});
+      if(existing&&state.prefs.closedDms?.[room.id]!==undefined){delete state.prefs.closedDms[room.id];await core.savePreferences();}
       await ids.index(state);data=channelView(ids,state,room);session.emit('CHANNEL_CREATE',data);
     } else if(route==='/users/@me/relationships'&&method==='GET')data=(await session.ready('local')).relationships;
     else if(route==='/users/@me/relationships'&&method==='POST') {
@@ -143,10 +171,21 @@ export async function vortexRequest(origin,method,path,options={},token) {
       const space=ids.raw('guild',match[1]);
       if(method==='GET')data=state.rooms.filter(room=>room.space===space).map(room=>channelView(ids,state,room));
       else if(method==='POST') {
-        if(![0,2].includes(body.type??0))unsupported(route);
+        supportedChannelFields(body,['name','type','parent_id','bitrate']);
+        if(![0,2,4].includes(body.type??0))unsupported(route);
+        if(typeof body.name!=='string'||!body.name.trim()||body.name.length>100)throw new Error('Enter a channel name of at most 100 characters');
+        const parent=parentRoom(session,space,body.parent_id);
+        if(body.type===4&&parent)throw new Error('Categories cannot be nested');
+        if(body.bitrate!=null&&(body.type!==2||![32000,64000,128000].includes(body.bitrate)))unsupported('/channels/bitrate');
         const members=(await core.action('space.members',{space})).members.filter(member=>!member.banned).map(member=>member.user);
-        const room=await core.createRoom(body.type===2?'voice':'text',{space,spaceName:state.rooms.find(r=>r.space===space)?.meta.spaceName||'Space',name:body.name,members,background:true});
+        const room=await core.createRoom(body.type===2?'voice':'text',{space,spaceName:state.rooms.find(r=>r.space===space)?.meta.spaceName||'Space',name:body.name,members,category:body.type===4,parent,background:true});
+        if(body.bitrate!=null){await core.action('room.audio',{room:room.id,audio:body.bitrate/1000});room.audio=body.bitrate/1000;}
         await ids.index(state);data=channelView(ids,state,room);session.emit('CHANNEL_CREATE',data);
+      } else if(method==='PATCH'&&Array.isArray(body)) {
+        const changes=body.map(item=>{const room=session.room(item.id);if(!room||room.space!==space)throw new Error('Channel unavailable');const {id,...values}=item;supportedChannelFields(values,['position','parent_id']);return {room,patch:channelPatch(session,room,values)};});
+        for(const {room,patch}of changes)await core.updateMetadata(room,patch);
+        await session.refresh(true);for(const {room}of changes)session.emit('CHANNEL_UPDATE',channelView(ids,state,session.room(ids.get('channel',room.id))));
+        status=204;
       } else unsupported(route);
     } else if((match=route.match(/^\/guilds\/(\d+)(?:\/members(?:\/(\d+))?)?$/u))&&method==='GET') {
       const guild=guildView(ids,state,state.spaces.find(s=>s.id===ids.raw('guild',match[1])));
@@ -154,11 +193,26 @@ export async function vortexRequest(origin,method,path,options={},token) {
     } else if((match=route.match(/^\/channels\/(\d+)(.*)$/u))) {
       const room=session.room(match[1]);if(!room)throw Object.assign(new Error('Conversation unavailable'),{status:404});
       const suffix=match[2];
+      if(room.meta.category&&['/messages','/typing','/call'].some(path=>suffix.startsWith(path)))unsupported(route);
       if(suffix==='/messages'&&method==='GET')data=await session.messages(room,query);
       else if(suffix==='/messages'&&method==='POST')data=await sendMessage(session,room,body,files);
       else if(suffix===''&&method==='GET')data=channelView(ids,state,room);
-      else if(suffix===''&&method==='PATCH'){await core.updateMetadata(room,{name:body.name,topic:body.topic,position:body.position});data=channelView(ids,state,session.room(match[1]));session.emit('CHANNEL_UPDATE',data);}
-      else if(suffix===''&&method==='DELETE') {await core.action('room.delete',{room:room.id});session.emit('CHANNEL_DELETE',channelView(ids,state,room));await session.refresh(true);status=204;}
+      else if(suffix===''&&method==='PATCH'){
+        const patch=channelPatch(session,room,body);
+        await core.updateMetadata(room,patch);
+        if(body.bitrate!=null)await core.action('room.audio',{room:room.id,audio:body.bitrate/1000});
+        await session.refresh(true);data=channelView(ids,state,session.room(match[1]));session.emit('CHANNEL_UPDATE',data);
+      }
+      else if(suffix===''&&method==='DELETE') {
+        if(room.kind==='dm') {
+          // Closing a DM is an account preference, never deletion of shared history.
+          state.prefs.closedDms??={};
+          state.prefs.closedDms[room.id]=Math.max(0,...(state.messages.get(room.id)||[]).filter(event=>event.payload?.type==='message').map(event=>event.seq));
+          await core.savePreferences();
+        } else if(!room.space)unsupported(route);
+        else await core.action('room.delete',{room:room.id});
+        session.emit('CHANNEL_DELETE',channelView(ids,state,room));await session.refresh(true);status=204;
+      }
       else if(suffix==='/typing'&&method==='POST'){await core.send({type:'typing'},'typing',room);status=204;}
       else if(suffix==='/call'&&method==='GET')data={ringable:!room.space,...callView(ids,state,room)};
       else if(['/call/ring','/call/stop-ringing'].includes(suffix)&&method==='POST'){

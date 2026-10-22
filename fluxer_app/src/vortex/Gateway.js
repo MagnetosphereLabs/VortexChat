@@ -88,6 +88,7 @@ export class VortexGateway {
       for(const space of state.spaces){const guild=guildView(ids,state,space);liveGuilds.add(guild.id);if(!this.guilds.has(guild.id))this.dispatch('GUILD_CREATE',guild);this.guilds.set(guild.id,guild);}
       for(const [id]of this.guilds)if(!liveGuilds.has(id)){this.dispatch('GUILD_DELETE',{id});this.guilds.delete(id);}
       for(const room of state.rooms) {
+        if(!this.session.visibleRoom(room))continue;
         const channel=channelView(ids,state,room);liveChannels.add(channel.id);
         if(!this.channels.has(channel.id))this.dispatch('CHANNEL_CREATE',channel);
         else if(JSON.stringify(this.channels.get(channel.id))!==JSON.stringify(channel))this.dispatch('CHANNEL_UPDATE',channel);

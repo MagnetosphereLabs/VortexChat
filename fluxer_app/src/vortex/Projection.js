@@ -51,8 +51,8 @@ export function channelView(ids,state,room) {
   const events=state.messages.get(room.id)||[];
   const last=events.filter(e=>e.payload?.type==='message').at(-1);
   return {id:ids.get('channel',room.id),guild_id:room.space?ids.get('guild',room.space):undefined,
-    type:room.space?(room.kind==='voice'?2:0):(room.kind==='dm'?1:3),name:room.meta.name,topic:room.meta.topic||null,
-    parent_id:null,position:room.meta.position||0,nsfw:false,rate_limit_per_user:0,permission_overwrites:[],
+    type:room.space?(room.meta.category===true?4:room.kind==='voice'?2:0):(room.kind==='dm'?1:3),name:room.meta.name,topic:room.meta.topic||null,
+    parent_id:room.meta.parent&&state.rooms.some(parent=>parent.id===room.meta.parent&&parent.space===room.space&&parent.meta.category===true)?ids.get('channel',room.meta.parent):null,position:room.meta.position||0,nsfw:room.meta.nsfw===true,rate_limit_per_user:0,permission_overwrites:[],
     bitrate:room.audio*1000,user_limit:0,owner_id:ids.get('user',room.creator),icon:null,
     recipients:room.space?undefined:room.meta.members.filter(id=>id!==state.me.id).map(id=>userView(ids,state.users.find(u=>u.id===id)||state.formerUsers?.find(u=>u.id===id)||{id,username:'deleted-user'})),
     last_message_id:last?ids.get('message',last.id):null};

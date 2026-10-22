@@ -14,12 +14,17 @@ export class VortexSession {
   emit(type,data){for(const listener of this.listeners)listener(type,data);}
   async refresh(fresh=false) {await this.core.sync(fresh);await this.ids.index(this.core.state);}
   currentUser(){const s=this.core.state;return userView(this.ids,s.users.find(u=>u.id===s.me.id)||s.me,s.me);}
+  visibleRoom(room) {
+    const closed=this.core.state.prefs.closedDms?.[room.id];
+    if(room.kind!=='dm'||closed===undefined)return true;
+    return (this.core.state.messages.get(room.id)||[]).some(event=>event.payload?.type==='message'&&event.seq>closed);
+  }
   room(id){return this.core.state.rooms.find(room=>this.ids.get('channel',room.id)===id);}
   async ready(sessionId) {
     const state=this.core.state;
     const friends=(await this.core.action('friends')).friends;
     return {session_id:sessionId,user:this.currentUser(),users:state.users.map(user=>userView(this.ids,user)),
-      guilds:state.spaces.map(space=>guildView(this.ids,state,space)),private_channels:state.rooms.filter(room=>!room.space).map(room=>channelView(this.ids,state,room)),
+      guilds:state.spaces.map(space=>guildView(this.ids,state,space)),private_channels:state.rooms.filter(room=>!room.space&&this.visibleRoom(room)).map(room=>channelView(this.ids,state,room)),
       relationships:friends.map(friend=>{const incoming=friend.user!==state.me.id;const id=incoming?friend.user:friend.other;return {id:this.ids.get('user',id),user:userView(this.ids,state.users.find(u=>u.id===id)),
         type:friend.status==='friend'?1:friend.status==='blocked'?2:incoming?3:4,since:new Date(0).toISOString(),share_voice_activity:false,friend_shares_voice_activity:false};}),
       user_settings:state.prefs.fluxer||undefined,
