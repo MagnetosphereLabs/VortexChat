@@ -4,6 +4,11 @@ on:
     branches: [main, 'vortex/**']
     paths:
       - 'fluxer_desktop/**'
+      - 'fluxer_app/**'
+      - 'packages/**'
+      - 'install-linux.py'
+      - 'scripts/test-install-linux.py'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/vortex-linux.yml'
   workflow_dispatch:
 permissions:
@@ -33,6 +38,9 @@ jobs:
           node-version: '24'
       - name: Install locked build tool versions
         run: |
+          for sources in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            if [ -f "$sources" ]; then sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$sources"; fi
+          done
           npm install --global pnpm@11.27.0
           rustup toolchain install 1.99.1 --profile minimal --target wasm32-unknown-unknown
           rustup default 1.99.1

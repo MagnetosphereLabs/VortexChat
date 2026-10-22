@@ -150,19 +150,17 @@ describe('shell update capability', () => {
 		});
 		assert.deepEqual(planFor({portable: true, platform: 'win32'}), {capability: 'manual-download', reason: 'platform'});
 		assert.deepEqual(planFor({flatpak: true, platform: 'linux'}), {capability: 'managed-package'});
-		assert.deepEqual(planFor({platform: 'win32'}), {capability: 'self-update', updater: 'velopack'});
-		assert.deepEqual(planFor({platform: 'darwin'}), {capability: 'self-update', updater: 'electron'});
+		assert.deepEqual(planFor({platform: 'win32'}), {capability: 'manual-download', reason: 'platform'});
+		assert.deepEqual(planFor({platform: 'darwin'}), {capability: 'manual-download', reason: 'platform'});
 		assert.deepEqual(planFor({platform: 'linux', appImage: APPIMAGE_TARGET}), {
-			capability: 'self-update',
-			updater: 'appimage',
-			target: APPIMAGE_TARGET,
+			capability: 'managed-package',
 		});
 		assert.deepEqual(planFor({platform: 'linux'}), {capability: 'managed-package'});
 		assert.deepEqual(planFor({platform: 'freebsd'}), {capability: 'manual-download', reason: 'platform'});
 	});
 
-	test('only a writable AppImage updates itself on Linux, every other install belongs to its package manager', () => {
-		assert.deepEqual(planFor({platform: 'linux', appImage: APPIMAGE_TARGET}).capability, 'self-update');
+	test('Linux updates are managed by the verified Vortex installer', () => {
+		assert.deepEqual(planFor({platform: 'linux', appImage: APPIMAGE_TARGET}).capability, 'managed-package');
 		for (const runtime of [
 			{platform: 'linux'},
 			{platform: 'linux', portable: true},
@@ -185,8 +183,8 @@ describe('shell update capability', () => {
 			});
 		}
 		assert.deepEqual(planFor({channel: 'stable', platform: 'darwin'}), {
-			capability: 'self-update',
-			updater: 'electron',
+			capability: 'manual-download',
+			reason: 'platform',
 		});
 	});
 
@@ -219,7 +217,7 @@ describe('shell update capability', () => {
 describe('blocked shell update states', () => {
 	test('the download page is a channel aware page, never an artifact', () => {
 		assert.equal(shouldOpenExternalUrl(DOWNLOAD_PAGE_URL), true);
-		assert.equal(new URL(DOWNLOAD_PAGE_URL).pathname, '/download');
+		assert.equal(new URL(DOWNLOAD_PAGE_URL).pathname, BUILD_CHANNEL === 'development' ? '/download' : '/MagnetosphereLabs/VortexChat/releases');
 	});
 
 	test('the download arch collapses to the two we publish', () => {

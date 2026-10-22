@@ -120,3 +120,21 @@ export function callView(ids,state,room,now=Date.now()/1000) {
   for(const voice of active.values())ringing.delete(ids.raw('user',voice.user_id));
   return {channel_id:ids.get('channel',room.id),region:'auto',voice_states:[...active.values()],ringing:[...ringing.keys()].map(id=>ids.get('user',id))};
 }
+
+// All product entitlements are free. This view contains no billing identifiers.
+export function freePremiumState() {
+  const common={premium_type:0,premium_since:null,premium_until:null,premium_will_cancel:false,
+    premium_billing_cycle:null,premium_lifetime_sequence:null,premium_grace_ends_at:null};
+  return {
+    actual:{...common,has_active_paid_premium:false,is_visionary:false,has_ever_purchased:false},
+    effective:{...common,is_premium:true,premium_enabled_override:true,premium_purchase_disabled:true,
+      premium_perks_disabled:false,self_hosted:true,bot:false},
+    billing:{stripe_customer_id:null,current_subscription_price:null,pending_subscription_change:null,
+      list_price_switch:{available:false,reason:'feature_unavailable',pending:false,current_price_id:null,
+        current_amount_minor:null,list_price_id:null,list_amount_minor:null,currency:null,billing_cycle:null,effective_at:null},
+      subscription:null,invoices:[],invoices_has_more:false,payment_methods:[],
+      refund_eligibility:{eligible:false,reason:'feature_unavailable',invoice_id:null,invoice_amount_paid_cents:null,
+        currency:null,paid_at:null,refund_window_expires_at:null,cooldown_expires_at:null,cancels_subscription:false}},
+    pricing:{country_code:null,localized:null},store:null,subscription_provider:null,
+  };
+}

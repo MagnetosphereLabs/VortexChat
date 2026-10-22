@@ -48,7 +48,7 @@ try {
       await page.reload({waitUntil:'domcontentloaded'});
       await page.getByText('Friends',{exact:true}).first().waitFor({timeout:60000});
       await page.locator('[data-flx="app.sidebar-nav.add-guild-button.button.add-guild"]').click();
-      await page.locator('[data-flx="guild.add-guild-modal.landing-view.action-button.view-change"]').click();
+      await page.locator('[data-flx="guild.add-guild-modal.action-button.action-button.click"]').first().click();
       await page.locator('input[name="name"]').fill('Private '+name+' Space');
       await page.locator('[data-flx="guild.add-guild-modal.guild-create-form.button.submit"]').click();
       const editor=page.locator('[contenteditable="true"][role="textbox"]').first();
@@ -59,6 +59,11 @@ try {
       await page.reload({waitUntil:'domcontentloaded'});
       await page.getByText(message,{exact:true}).first().waitFor({timeout:60000});
       assert.equal(outbound.some(body=>body.includes(message)),false,'Decrypted message escaped into a network request');
+      const persisted=await context.storageState();
+      for(const savedOrigin of persisted.origins)for(const entry of savedOrigin.localStorage){
+        assert.equal(entry.value.includes(message),false,'Message leaked to plaintext local storage');
+        assert.equal(['token','userId','AccountManager','Drafts','MessageEdit'].includes(entry.name)||entry.name.startsWith('fluxer:app-storage-mirror:'),false,'Private startup mirror persisted');
+      }
       await page.screenshot({path:join(artifacts,name+'-conversation.png'),fullPage:true});
       console.log(name+': sign-in, encrypted session restore, Space creation and encrypted messaging passed');
     } catch(error) {

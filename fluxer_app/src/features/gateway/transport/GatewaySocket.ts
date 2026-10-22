@@ -746,6 +746,8 @@ export class GatewaySocket extends EventEmitter<GatewaySocketEvents> {
 			.then((url) => {
 				this.log.debug(`Opening gateway connection to ${url}`);
 				try {
+					// Vortex delivers local JSON events, not compressed wire frames.
+					if (new URL(url).pathname === '/vortex/gateway') this.options.compression = 'none';
 					const compression: CompressionType = this.options.compression ?? 'zstd-stream';
 					if (compression !== 'none') {
 						this.payloadDecompressor = new GatewayCompression(compression);

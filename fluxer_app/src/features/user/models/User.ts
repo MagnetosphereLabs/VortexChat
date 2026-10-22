@@ -565,6 +565,8 @@ export class User {
 
 	isClaimed(): boolean {
 		if (!RuntimeConfig.usesUsernameSignIn) return !!this.email;
+		// Vortex has registered OPAQUE accounts, without email-based claiming.
+		if (RuntimeConfig.apiEndpoint?.endsWith('/vortex/api')) return true;
 		return this.passwordLastChangedAt != null || this._traits.includes('sso');
 	}
 

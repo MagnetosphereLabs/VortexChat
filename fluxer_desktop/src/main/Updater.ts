@@ -11,7 +11,6 @@ import {
 	getManualDownloadUrl,
 	type ManualLatestFile,
 	type ManualLatestInfo,
-	UPDATE_BASE_URL,
 } from '@electron/main/UpdaterDownloads';
 import {app, type BrowserWindow, ipcMain, net} from 'electron';
 import log from 'electron-log';
@@ -75,8 +74,9 @@ async function fetchManualLatest(options: {forceRefresh?: boolean} = {}): Promis
 	if (!options.forceRefresh && manualLatestCache && now - manualLatestCache.at < MANUAL_CACHE_TTL_MS) {
 		return manualLatestCache.info;
 	}
-	const response = await net.fetch(`${UPDATE_BASE_URL}/latest`, {
+	const response = await net.fetch('https://github.com/MagnetosphereLabs/VortexChat/releases/latest/download/desktop-release.json', {
 		cache: 'no-store',
+		signal: AbortSignal.timeout(15000),
 		headers: {
 			Accept: 'application/json',
 			'Cache-Control': 'no-cache',
@@ -84,6 +84,7 @@ async function fetchManualLatest(options: {forceRefresh?: boolean} = {}): Promis
 		},
 	});
 	if (!response.ok) {
+		if (response.status === 404) throw new Error('No stable Vortex Chat release is published yet. Open the Vortex Chat releases page for test builds.');
 		throw new Error(`Latest version request failed: ${response.status}`);
 	}
 	const payload = (await response.json()) as {version?: unknown; pub_date?: unknown; files?: unknown};

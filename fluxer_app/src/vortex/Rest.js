@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import {auth} from './vendor/auth.js';
 import {getSession,login,register,logout} from './Session.js';
-import {channelView,guildView,userView,materializeMessages,callView} from './Projection.js';
+import {channelView,guildView,userView,materializeMessages,callView,freePremiumState} from './Projection.js';
 
 export function vortexOrigin(endpoint) {
   if(!endpoint)return null;
@@ -66,7 +66,8 @@ export async function vortexRequest(origin,method,path,options={},token) {
   else {
     const session=await getSession(token,origin),core=session.core,state=core.state,ids=session.ids;
     let match;
-    if(route==='/users/@me'&&method==='GET')data=session.currentUser();
+    if(route==='/premium/state'&&method==='GET')data=freePremiumState();
+    else if(route==='/users/@me'&&method==='GET')data=session.currentUser();
     else if(route==='/users/@me/mfa/totp/start'&&method==='POST')data=await core.action('totp.start');
     else if(route==='/users/@me/mfa/totp/enable'&&method==='POST'){
       const result=await core.action('totp.finish',{otp:body.code});

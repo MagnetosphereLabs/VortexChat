@@ -41,20 +41,10 @@ export function decideShellUpdatePlan(runtime: ShellUpdateRuntime): ShellUpdateP
 		return {capability: ShellUpdateCapability.MANAGED_PACKAGE};
 	}
 	if (runtime.platform === 'linux') {
-		if (!runtime.portable && runtime.appImage != null) {
-			return {capability: ShellUpdateCapability.SELF_UPDATE, updater: 'appimage', target: runtime.appImage};
-		}
 		return {capability: ShellUpdateCapability.MANAGED_PACKAGE};
 	}
-	if (runtime.portable) {
-		return {capability: ShellUpdateCapability.MANUAL_DOWNLOAD, reason: 'platform'};
-	}
-	if (runtime.platform === 'win32') {
-		return {capability: ShellUpdateCapability.SELF_UPDATE, updater: 'velopack'};
-	}
-	if (runtime.platform === 'darwin') {
-		return {capability: ShellUpdateCapability.SELF_UPDATE, updater: 'electron'};
-	}
+	// Vortex releases move the complete, verified application together. Platform
+	// signing and store distribution must be configured before enabling self-update.
 	return {capability: ShellUpdateCapability.MANUAL_DOWNLOAD, reason: 'platform'};
 }
 

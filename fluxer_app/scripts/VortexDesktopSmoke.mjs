@@ -61,7 +61,7 @@ try {
   await page.getByText('Friends',{exact:true}).first().waitFor({timeout:30000});
   assert.equal(await page.evaluate(async()=>typeof await window.electron.vortexDeviceKey('account')),'string');
   await page.locator('[data-flx="app.sidebar-nav.add-guild-button.button.add-guild"]').click();
-  await page.locator('[data-flx="guild.add-guild-modal.landing-view.action-button.view-change"]').click();
+  await page.locator('[data-flx="guild.add-guild-modal.action-button.action-button.click"]').first().click();
   await page.locator('input[name="name"]').fill('Private desktop Space');
   await page.locator('[data-flx="guild.add-guild-modal.guild-create-form.button.submit"]').click();
   const editor=page.locator('[contenteditable="true"][role="textbox"]').first();
@@ -83,3 +83,4 @@ try {
   await browser?.close().catch(()=>{});await stop(desktop);await stop(server);
   await rm(dir,{recursive:true,force:true});
 }
+

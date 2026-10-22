@@ -175,7 +175,7 @@ def integrate(destination):
                 '[Desktop Entry]\nType=Application\nName=Vortex Chat\n'
                 'Comment=Private conversations on your Vortex Node\nExec=vortex-chat %U\n'
                 'Icon=vortex-chat\nTerminal=false\nCategories=Network;InstantMessaging;\n'
-                'StartupWMClass=Vortex Chat\nMimeType=x-scheme-handler/vortex-chat;\n')
+                'StartupWMClass=Vortex Chat\nMimeType=x-scheme-handler/vortexchat;\n')
     if shutil.which('update-desktop-database'):
         run('update-desktop-database', '/usr/local/share/applications')
 
@@ -222,6 +222,8 @@ def main():
                 dependencies()
                 staging.rename(destination)
             integrate(destination)
+            if Path(__file__).is_file():
+                atomic_text(ROOT / 'update', Path(__file__).read_text(), 0o755)
             current = ROOT / 'current'
             if current.exists() and not current.is_symlink():
                 raise ValueError('An unmanaged directory occupies the application link')

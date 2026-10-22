@@ -13,8 +13,6 @@ export const AUTH_SHELL_HINT_STORAGE_KEY = 'fluxer:ui:auth-shell-hint';
 export const PREBOOT_NETWORK_HINT_STORAGE_KEY = 'fluxer:preboot:network';
 export {GATEWAY_PREBOOT_SESSION_STORAGE_KEY, SHELL_HINT_STORAGE_KEY, ZOOM_PREBOOT_MIRROR_STORAGE_KEY};
 
-const PREBOOT_STORAGE_PROBE_KEY = 'fluxer:preboot:storage-probe';
-
 export const PREBOOT_MIRROR_KEYS: ReadonlyArray<string> = Object.freeze([
 	AppStorageKey.AUTH_ACCOUNT_KEY,
 	AppStorageKey.AUTH_SESSION_TOKEN,
@@ -35,7 +33,7 @@ interface RawStorageBinding {
 }
 
 function createMemoryStorage(): Storage {
-	const memoryCache: Record<string, string> = {};
+	const memoryCache: Record<string, string> = Object.create(null);
 	return {
 		getItem: (key) => (key in memoryCache ? memoryCache[key] : null),
 		setItem: (key, value) => {
@@ -60,24 +58,19 @@ function createMemoryStorage(): Storage {
 }
 
 function createRawStorageBinding(): RawStorageBinding {
-	if (typeof window === 'undefined') {
-		return {storage: createMemoryStorage(), storageType: 'memory'};
-	}
+	// Startup hints are ephemeral. Persisted account, draft and message state
+	// belongs in the encrypted backend, never a second plaintext mirror.
 	try {
 		const storage = getProtectedLocalStorage();
-		if (storage != null) {
-			const previousValue = storage.getItem(PREBOOT_STORAGE_PROBE_KEY);
-			storage.setItem(PREBOOT_STORAGE_PROBE_KEY, '1');
-			if (previousValue === null) {
-				storage.removeItem(PREBOOT_STORAGE_PROBE_KEY);
-			} else {
-				storage.setItem(PREBOOT_STORAGE_PROBE_KEY, previousValue);
+		if (storage) {
+			const legacyKeys = new Set([...PREBOOT_MIRROR_KEYS, 'Drafts', 'MessageEdit', 'AccountManager', 'runtimeConfig']);
+			for (let index = storage.length - 1; index >= 0; index--) {
+				const key = storage.key(index);
+				if (key && (legacyKeys.has(key) || key.startsWith('fluxer:app-storage-mirror:'))) storage.removeItem(key);
 			}
-			return {storage, storageType: 'local'};
 		}
-		console.warn('[PrebootMirror] Local storage is unavailable, using an in-memory preboot mirror');
-	} catch (error) {
-		console.warn('[PrebootMirror] Local storage probe failed, using an in-memory preboot mirror', error);
+	} catch {
+		// Unavailable browser storage does not prevent ephemeral startup hints.
 	}
 	return {storage: createMemoryStorage(), storageType: 'memory'};
 }
