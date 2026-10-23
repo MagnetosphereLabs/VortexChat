@@ -4,6 +4,7 @@
 import argparse
 import fcntl
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -27,6 +28,53 @@ def default_jobs():
     return max(1, min(os.cpu_count() or 2, memory // (2 * 1024**3)))
 
 
+def ssh_transport(target, port=None):
+    if port is not None and (not isinstance(port, int) or not 1 <= port <= 65535):
+        raise ValueError('SSH port must be between 1 and 65535')
+    if '@' in target:
+        user, host = target.rsplit('@', 1)
+        if not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]*', user):
+            raise ValueError('Enter a valid SSH username')
+        prefix = user + '@'
+    else:
+        host, prefix = target, ''
+    if host.startswith('[') and host.endswith(']'):
+        host = host[1:-1]
+    if ':' in host:
+        ipaddress.IPv6Address(host)
+        copy_host = '[' + host + ']'
+    elif re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', host):
+        copy_host = host
+    else:
+        raise ValueError('Enter a valid VPS IP address, hostname or SSH alias')
+    ssh = ['ssh'] + (['-p', str(port)] if port is not None else [])
+    scp = ['scp'] + (['-P', str(port)] if port is not None else [])
+    return ssh, scp, prefix + host, prefix + copy_host
+
+
+def deploy_web(output, result, target, port=None):
+    ssh, scp, ssh_target, copy_target = ssh_transport(target, port)
+    web = output / 'vortex-chat-web.tar.gz'
+    checksum = hashlib.sha256()
+    with web.open('rb') as stream:
+        for block in iter(lambda: stream.read(1024**2), b''):
+            checksum.update(block)
+    digest = checksum.hexdigest()
+    if result.get('web_sha256') != digest:
+        raise ValueError('Web archive differs from its recorded build checksum')
+    remote = run(*ssh, ssh_target, 'mktemp -d /tmp/vortex-web.XXXXXXXX', capture_output=True, text=True).stdout.strip()
+    if not re.fullmatch(r'/tmp/vortex-web\.[A-Za-z0-9]{8}', remote):
+        raise ValueError('The server returned an unexpected temporary path')
+    try:
+        run(*scp, str(web), str(ROOT / 'scripts/deploy-local-web.py'), copy_target + ':' + remote + '/')
+        command = shlex.join(['sudo', 'python3', remote + '/deploy-local-web.py',
+            '--archive', remote + '/vortex-chat-web.tar.gz', '--sha256', digest,
+            '--source-commit', result['source_commit']])
+        run(*ssh, '-tt', ssh_target, command)
+    finally:
+        subprocess.run([*ssh, ssh_target, 'rm -rf -- ' + shlex.quote(remote)], check=False)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--install', action='store_true', help='Install the completed local build on this computer')
@@ -34,11 +82,16 @@ def main():
     parser.add_argument('--jobs', type=int, default=default_jobs(), help='Parallel Rust jobs (default: CPU/RAM based)')
     parser.add_argument('--with-web', action='store_true', help='Also produce a separate web client archive')
     parser.add_argument('--deploy-web', metavar='USER@VPS', help='Also build and activate the web client on your existing Node over SSH')
+    parser.add_argument('--ssh-port', type=int, metavar='PORT', help='SSH/SCP port for --deploy-web (otherwise use SSH configuration)')
     args = parser.parse_args()
     if args.deploy_web:
-        if not re.fullmatch(r'(?:[A-Za-z0-9_.-]+@)?[A-Za-z0-9][A-Za-z0-9_.-]*', args.deploy_web):
-            parser.error('--deploy-web must be an SSH hostname or USER@hostname, without options')
+        try:
+            ssh_transport(args.deploy_web, args.ssh_port)
+        except ValueError as error:
+            parser.error(str(error))
         args.with_web = True
+    elif args.ssh_port is not None:
+        parser.error('--ssh-port requires --deploy-web')
     if os.geteuid() == 0:
         parser.error('Run as your normal desktop user. Only the final installation uses sudo.')
     if platform.system() != 'Linux' or platform.machine() != 'x86_64':
@@ -95,26 +148,7 @@ def main():
         else:
             print('Install it with:\n' + shlex.join(install), flush=True)
         if args.deploy_web:
-            web = output / 'vortex-chat-web.tar.gz'
-            checksum = hashlib.sha256()
-            with web.open('rb') as stream:
-                for block in iter(lambda: stream.read(1024**2), b''):
-                    checksum.update(block)
-            digest = checksum.hexdigest()
-            if result.get('web_sha256') != digest:
-                raise ValueError('Web archive differs from its recorded build checksum')
-            target = args.deploy_web
-            remote = run('ssh', target, 'mktemp -d /tmp/vortex-web.XXXXXXXX', capture_output=True, text=True).stdout.strip()
-            if not re.fullmatch(r'/tmp/vortex-web\.[A-Za-z0-9]{8}', remote):
-                raise ValueError('The server returned an unexpected temporary path')
-            try:
-                run('scp', str(web), str(ROOT / 'scripts/deploy-local-web.py'), target + ':' + remote + '/')
-                command = shlex.join(['sudo', 'python3', remote + '/deploy-local-web.py',
-                    '--archive', remote + '/vortex-chat-web.tar.gz', '--sha256', digest,
-                    '--source-commit', result['source_commit']])
-                run('ssh', '-tt', target, command)
-            finally:
-                subprocess.run(['ssh', target, 'rm -rf -- ' + shlex.quote(remote)], check=False)
+            deploy_web(output, result, args.deploy_web, args.ssh_port)
         print('Rerun the same build command to update. The stopped builder and compilation caches are retained.', flush=True)
 
 

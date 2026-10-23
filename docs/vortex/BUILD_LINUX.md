@@ -79,10 +79,10 @@ Add `--with-web` to also create `.vortex-build/vortex-chat-web.tar.gz`. That arc
 To install the Linux app and deploy the matching web build to an existing Node, use your normal SSH account for that server:
 
 ```sh
-python3 scripts/build-linux.py --install --deploy-web root@your-node-domain
+python3 scripts/build-linux.py --install --deploy-web root@your-node-domain --ssh-port 2222
 ```
 
-Use the same SSH hostname or alias you normally connect to; the remote account needs sudo access. The command builds both clients on this PC, installs the desktop app locally, transfers the web archive over SSH, verifies its recorded checksum on the server, and switches only the Node's web-client directory. It preserves configuration ownership and permissions, accounts, encrypted storage and Vault selection. A failed service restart restores the previous configuration. SSH host-key checking remains enabled, and the build container has no access to your SSH keys.
+Use the same SSH IP address, hostname or alias you normally connect to; the remote account needs sudo access. Replace `2222` with your SSH port. The chosen port is used for file transfer, activation and cleanup. Omit `--ssh-port` to use your existing SSH configuration. IPv4 and IPv6 addresses are supported. The command builds both clients on this PC, installs the desktop app locally, transfers the web archive over SSH, verifies its recorded checksum on the server, and switches only the Node's web-client directory. It preserves configuration ownership and permissions, accounts, encrypted storage and Vault selection. A failed service restart restores the previous configuration. SSH host-key checking remains enabled, and the build container has no access to your SSH keys.
 
 This is a direct local testing path, independent of GitHub Actions. The server records the source commit and checksum in `vortex-local-build.json`. Open the Node domain and reload the browser after deployment. Do not clear browser storage or reinstall the Node to apply an interface fix.
 
