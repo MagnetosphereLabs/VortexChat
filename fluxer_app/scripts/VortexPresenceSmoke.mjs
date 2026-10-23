@@ -4,9 +4,12 @@ import assert from 'node:assert/strict';
 // Exercise the real UI consumer, not just the adapter's REST return values.
 export async function verifyPresenceChanges(page,origin) {
   for(const [label,status]of [['Invisible','invisible'],['Online','online']]) {
-    await page.locator('[data-flx="app.user-area.user-area-inner.user-info"]').click();
-    await page.locator('[data-flx="app.floating.user-area-popout.action-button"]').hover();
-    const choice=page.locator('[data-flx="app.floating.user-area-popout.status-menu.status-menu-item.select.button"]').filter({hasText:label});
+    // Focus/popout wrappers replace data-flx attributes on their trigger child.
+    // The accessible button names survive those wrappers.
+    await page.getByRole('button',{name:/^Open user menu for /}).click();
+    await page.getByRole('button',{name:/^(Online|Idle|Do Not Disturb|Invisible)$/}).hover();
+    const choice=page.locator('[data-flx="app.floating.user-area-popout.status-menu.status-menu"]')
+      .getByRole('button',{name:new RegExp('^'+label+'(?:\\s|$)')});
     await Promise.all([
       page.waitForResponse(response=>{
         if(response.url()!==origin+'/chat/action'||response.status()!==200)return false;

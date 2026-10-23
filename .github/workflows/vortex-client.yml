@@ -98,7 +98,6 @@ jobs:
           key: ${{ steps.renderer-tools.outputs.cache-primary-key }}
       - name: Check client types
         id: types
-        continue-on-error: true
         run: pnpm --filter fluxer_app typecheck:only
       - name: Install browser test tools
         timeout-minutes: 3
@@ -106,7 +105,6 @@ jobs:
           npm install --prefix .vortex-tools --no-audit --no-fund playwright@1.58.2
       - name: Test Chrome sign-in and encrypted messaging
         id: chrome
-        continue-on-error: true
         timeout-minutes: 5
         env:
           VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node
@@ -116,7 +114,6 @@ jobs:
         run: node fluxer_app/scripts/VortexBrowserSmoke.mjs
       - name: Verify encrypted video, shared audio and media revocation
         id: media
-        continue-on-error: true
         timeout-minutes: 5
         env:
           VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node
@@ -127,7 +124,6 @@ jobs:
         run: .vortex-tools/node_modules/.bin/playwright install --with-deps firefox webkit
       - name: Test Firefox and WebKit sign-in and encrypted messaging
         id: other-browsers
-        continue-on-error: true
         timeout-minutes: 6
         env:
           VORTEX_NODE_BINARY: ${{ github.workspace }}/node-server/target/debug/vortex-node
