@@ -11,12 +11,13 @@ if [[ "${1:-}" == --prepare ]]; then
   [[ "$EUID" == 0 && "${2:-}" =~ ^[0-9]+$ && "${3:-}" =~ ^[0-9]+$ ]]
   builder_uid="$2"
   builder_gid="$3"
-  if [[ ! -f /var/lib/vortex-builder-v1 ]]; then
+  if [[ ! -f /var/lib/vortex-builder-tools-v1 && ! -f /var/lib/vortex-builder-v1 ]]; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get -o Acquire::Retries=3 update
     apt-get -o Acquire::Retries=3 install --yes --no-install-recommends \
       ca-certificates curl git python3 sudo xz-utils unzip build-essential pkg-config clang lld
     node_version=24.21.0
+    if [[ "$(node --version 2>/dev/null || true)" != "v${node_version}" ]]; then
     node_directory="$(mktemp -d)"
     (
       cd "$node_directory"
@@ -36,14 +37,17 @@ PY
       tar -xJf node.tar.xz -C /usr/local --strip-components=1
     )
     rm -rf -- "$node_directory"
-    npm install --global pnpm@11.27.0
-    getent group "$builder_gid" >/dev/null || groupadd --gid "$builder_gid" builder
-    id builder >/dev/null 2>&1 || useradd --uid "$builder_uid" --gid "$builder_gid" --create-home --shell /bin/bash builder
-    [[ "$(id -u builder)" == "$builder_uid" && "$(id -g builder)" == "$builder_gid" ]]
-    printf 'builder ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/vortex-builder
-    chmod 0440 /etc/sudoers.d/vortex-builder
-    touch /var/lib/vortex-builder-v1
+    fi
+    if [[ "$(pnpm --version 2>/dev/null || true)" != 11.27.0 ]]; then
+      npm install --global pnpm@11.27.0
+    fi
+    touch /var/lib/vortex-builder-tools-v1
   fi
+  builder_user="$(python3 /work/scripts/prepare-build-user.py "$builder_uid" "$builder_gid")"
+  printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$builder_user" > /etc/sudoers.d/vortex-builder
+  chmod 0440 /etc/sudoers.d/vortex-builder
+  printf '%s\n' "$builder_user" > /var/lib/vortex-builder-user
+  touch /var/lib/vortex-builder-v1
   exit 0
 fi
 

@@ -25,6 +25,7 @@ jobs:
           python3 scripts/test-install-linux.py
           python3 scripts/test-deploy-local-web.py
           python3 scripts/test-build-linux.py
+          python3 scripts/test-prepare-build-user.py
           python3 scripts/test-publish-vortex-release.py
           python3 -m py_compile scripts/build-linux.py scripts/deploy-local-web.py
           bash -n scripts/build-linux-container.sh

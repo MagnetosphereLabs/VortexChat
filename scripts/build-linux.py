@@ -125,10 +125,14 @@ def main():
         try:
             run(engine, 'exec', '--user', '0', container, 'bash', '/work/scripts/build-linux-container.sh',
                 '--prepare', os.getuid(), os.getgid())
+            builder_user = run(engine, 'exec', '--user', '0', container, 'cat',
+                               '/var/lib/vortex-builder-user', capture_output=True, text=True).stdout.strip()
+            if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.-]*\$?', builder_user):
+                raise ValueError('The build container returned an invalid account name')
             (output / 'build-result.json').unlink(missing_ok=True)
             command = shlex.join(['bash', '/work/scripts/build-linux-container.sh', '--build',
                                   str(args.jobs), 'web' if args.with_web else 'desktop'])
-            run(engine, 'exec', '--user', '0', container, 'su', '--login', 'builder', '--command', command)
+            run(engine, 'exec', '--user', '0', container, 'su', '--login', '--shell', '/bin/bash', builder_user, '--command', command)
         finally:
             subprocess.run([engine, 'stop', '--time', '10', container], check=False)
         result = json.loads((output / 'build-result.json').read_text())
