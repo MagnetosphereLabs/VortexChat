@@ -5,6 +5,7 @@ import {auth} from './vendor/auth.js';
 import {channelView,guildView,materializeMessages,callView} from './Projection.js';
 import {mediaEndpoint} from './MediaEndpoint.js';
 import {memberListView} from './MemberList.js';
+import {presenceStatus,userSettingsView} from './UserSettingsView.js';
 
 export class VortexGateway {
   kind='browser';readyState=0;listeners=new Map();sequence=0;sessionId=crypto.randomUUID();seen=new Map();channels=new Map();guilds=new Map();relationships=new Map();voiceEvents=new Set();
@@ -23,9 +24,10 @@ export class VortexGateway {
       if(packet.op===2||packet.op===6)await this.identify(packet.d);
       else if(packet.op===4)await this.voice(packet.d);
       else if(packet.op===3&&this.session){
-        this.status=packet.d.status||'online';
+        this.status=presenceStatus(packet.d?.status);
         await this.session.core.action('status',{status:this.status});
         await this.heartbeat();
+        await this.refresh(true);
       }
       else if(packet.op===8&&this.session) {
         const ids=packet.d.guild_ids||(Array.isArray(packet.d.guild_id)?packet.d.guild_id:[packet.d.guild_id]);
@@ -55,6 +57,8 @@ export class VortexGateway {
     await verifyNode(this.origin);
     this.session=await getSession(data.token,this.origin);
     if(this.readyState!==1)return;
+    this.status=userSettingsView(this.session.core.state).status;
+    await this.session.core.action('status',{status:this.status});
     this.unsubscribe=()=>this.session.listeners.delete(this.onDispatch);
     this.onDispatch=(type,body)=>{
       if(type==='VORTEX_MEDIA_KEY'){globalThis.dispatchEvent?.(new CustomEvent('vortex-media-key',{detail:{channelId:this.lastVoice?.channel_id,key:body.key}}));return;}

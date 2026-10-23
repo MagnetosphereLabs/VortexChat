@@ -47,7 +47,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: MagnetosphereLabs/VortexNode
-          ref: af65f171997af9d21874b443741757580070fc12
+          ref: d659a08c0888b4836dc44c6e27e16ec28bda70f3
           path: node-server
           persist-credentials: false
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9

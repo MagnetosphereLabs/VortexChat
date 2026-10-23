@@ -8,6 +8,7 @@ import {pathToFileURL} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
 import 'fake-indexeddb/auto';
 import {auth} from '../src/vortex/vendor/auth.js';
+import {verifyPresenceChanges} from './VortexPresenceSmoke.mjs';
 const playwright=await import(pathToFileURL(resolve(process.env.VORTEX_PLAYWRIGHT_MODULE)));
 const binary=resolve(process.env.VORTEX_NODE_BINARY);
 const dir=await mkdtemp(join(tmpdir(),'vortex-browser-'));
@@ -47,6 +48,7 @@ try {
       await page.screenshot({path:join(artifacts,name+'.png'),fullPage:true});
       await page.reload({waitUntil:'domcontentloaded'});
       await page.getByText('Friends',{exact:true}).first().waitFor({timeout:60000});
+      await verifyPresenceChanges(page,origin);
       await page.locator('[data-flx="app.sidebar-nav.add-guild-button.button.add-guild"]').click();
       await page.locator('[data-flx="guild.add-guild-modal.action-button.action-button.click"]').first().click();
       await page.locator('input[name="name"]').fill('Private '+name+' Space');
@@ -77,7 +79,7 @@ try {
         assert.equal(['token','userId','AccountManager','Drafts','MessageEdit'].includes(entry.name)||entry.name.startsWith('fluxer:app-storage-mirror:'),false,'Private startup mirror persisted');
       }
       await page.screenshot({path:join(artifacts,name+'-conversation.png'),fullPage:true});
-      console.log(name+': sign-in, encrypted session restore, Space creation and encrypted messaging passed');
+      console.log(name+': sign-in, encrypted session restore, Invisible to Online, Space creation and encrypted messaging passed');
     } catch(error) {
       failures++;console.error(name+': '+String(error));
       await page.screenshot({path:join(artifacts,name+'-failure.png'),fullPage:true}).catch(()=>{});

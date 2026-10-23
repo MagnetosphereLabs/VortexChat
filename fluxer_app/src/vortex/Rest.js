@@ -4,6 +4,7 @@ import {getSession,login,register,logout} from './Session.js';
 import {channelView,guildView,userView,materializeMessages,callView,freePremiumState} from './Projection.js';
 import {readConversationArchive,searchPrivateMessages} from './PrivateSearch.js';
 import {planChannelMoves} from './ChannelLayout.js';
+import {userSettingsView} from './UserSettingsView.js';
 
 export function vortexOrigin(endpoint) {
   if(!endpoint)return null;
@@ -137,9 +138,14 @@ export async function vortexRequest(origin,method,path,options={},token) {
       await core.action('totp.disable',{otp:body.code});state.me=await core.action('me');session.emit('USER_UPDATE',session.currentUser());status=204;
     }
     else if(route==='/users/@me/settings') {
-      if(method==='PATCH') {state.prefs.fluxer={...state.prefs.fluxer,...body};await core.savePreferences();session.emit('USER_SETTINGS_UPDATE',state.prefs.fluxer);}
+      if(method==='PATCH') {
+        state.prefs.fluxer=userSettingsView(state,body);
+        state.prefs.status=state.prefs.fluxer.status;
+        await core.savePreferences();
+        session.emit('USER_SETTINGS_UPDATE',userSettingsView(state));
+      }
       else if(method!=='GET')unsupported(route);
-      data=state.prefs.fluxer||{};
+      data=userSettingsView(state);
     } else if(route==='/users/@me/channels'&&method==='GET')data=state.rooms.filter(room=>!room.space&&session.visibleRoom(room)).map(room=>channelView(ids,state,room));
     else if(route==='/users/@me/channels'&&method==='POST') {
       const recipients=(body.recipients||[body.recipient_id]).filter(Boolean).map(id=>ids.raw('user',id));

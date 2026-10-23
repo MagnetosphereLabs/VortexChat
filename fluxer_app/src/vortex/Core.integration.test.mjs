@@ -136,7 +136,24 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   cleanup.push(()=>gateway.dispose());
   const packets=[];gateway.on('message',event=>packets.push(JSON.parse(event.data)));gateway.start();await delay(0);
   await gateway.identify({token});
-  assert.equal(packets.find(p=>p.t==='READY').d.user.id,me.id);
+  const ready=packets.find(p=>p.t==='READY').d;
+  assert.equal(ready.user.id,me.id);
+  assert.equal(ready.user_settings.status,'online');
+  assert.deepEqual(ready.user_settings.restricted_guilds,[]);
+  assert.deepEqual(ready.user_settings.bot_restricted_guilds,[]);
+  assert.deepEqual(ready.user_settings.guild_folders,[]);
+  assert.equal(ready.user_settings.developer_mode,false);
+  for(const status of ['invisible','online','idle','dnd','online']) {
+    const settings=(await request('PATCH','/users/@me/settings',{status})).body;
+    assert.equal(settings.status,status);
+    assert.deepEqual(settings.guild_folders,[]);
+    assert.equal(settings.developer_mode,false);
+    assert.deepEqual(packets.filter(p=>p.t==='USER_SETTINGS_UPDATE').at(-1).d,settings);
+    gateway.send(JSON.stringify({op:3,d:{status}}));await gateway.pending;
+    assert.equal(gateway.readyState,1,'Changing presence must not close the encrypted session');
+    assert.equal(client.core.state.users.find(user=>user.id===client.core.state.me.id).status,status==='invisible'?'offline':status);
+  }
+  assert.equal((await request('GET','/users/@me/settings')).body.status,'online');
   gateway.send(JSON.stringify({op:14,d:{subscriptions:{[guild.id]:{member_list_channels:{[channel]:[[0,99]]}}}}}));
   await gateway.pending;
   assert.ok(packets.some(packet=>packet.t==='GUILD_MEMBER_LIST_UPDATE'&&packet.d.channel_id===channel&&packet.d.ops[0].items.some(item=>item.member?.user.id===me.id)));

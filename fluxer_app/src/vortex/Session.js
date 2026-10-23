@@ -3,6 +3,7 @@ import {auth} from './vendor/auth.js';
 import {createVortexCore} from './Core.js';
 import {registerAttachment,registerAttachmentAlias,unregisterAttachments} from './AttachmentDownloads.js';
 import {VortexIds,channelView,guildView,userView,materializeMessages} from './Projection.js';
+import {userSettingsView} from './UserSettingsView.js';
 
 export class VortexSession {
   ids=new VortexIds();listeners=new Set();attachmentUrls=new Map();attachmentReferences=new Map();previewBytes=0;voice=null;
@@ -28,7 +29,7 @@ export class VortexSession {
       guilds:state.spaces.map(space=>guildView(this.ids,state,space)),private_channels:state.rooms.filter(room=>!room.space&&this.visibleRoom(room)).map(room=>channelView(this.ids,state,room)),
       relationships:friends.map(friend=>{const incoming=friend.user!==state.me.id;const id=incoming?friend.user:friend.other;return {id:this.ids.get('user',id),user:userView(this.ids,state.users.find(u=>u.id===id)),
         type:friend.status==='friend'?1:friend.status==='blocked'?2:incoming?3:4,since:new Date(0).toISOString(),share_voice_activity:false,friend_shares_voice_activity:false};}),
-      user_settings:state.prefs.fluxer||undefined,
+      user_settings:userSettingsView(state),
       read_states:state.rooms.flatMap(room=>{const id=state.prefs.read?.[room.id];if(!id)return [];try{return [{id:this.ids.get('channel',room.id),last_message_id:this.ids.get('message',id),mention_count:0}];}catch{return [];}}),
       user_guild_settings:Object.values(state.prefs.guildSettings||{}),presences:state.users.map(user=>({user:{id:this.ids.get('user',user.id)},status:user.status||'offline',activities:[]})),
       rtc_regions:[],notes:state.prefs.notes||{},pinned_dms:state.prefs.pinnedDms||[],favorite_memes:[],webauthn_credentials:[]};

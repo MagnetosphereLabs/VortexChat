@@ -8,6 +8,7 @@ import {pathToFileURL} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
 import 'fake-indexeddb/auto';
 import {auth} from '../src/vortex/vendor/auth.js';
+import {verifyPresenceChanges} from './VortexPresenceSmoke.mjs';
 
 const playwright=await import(pathToFileURL(resolve(process.env.VORTEX_PLAYWRIGHT_MODULE)));
 const dir=await mkdtemp(join(tmpdir(),'vortex-desktop-'));
@@ -62,6 +63,7 @@ try {
   await page.waitForURL('**/channels/@me',{timeout:60000});
   await page.getByText('Friends',{exact:true}).first().waitFor({timeout:30000});
   assert.equal(await page.evaluate(async()=>typeof await window.electron.vortexDeviceKey('account')),'string');
+  await verifyPresenceChanges(page,origin);
   await page.locator('[data-flx="app.sidebar-nav.add-guild-button.button.add-guild"]').click();
   await page.locator('[data-flx="guild.add-guild-modal.action-button.action-button.click"]').first().click();
   await page.locator('input[name="name"]').fill('Private desktop Space');
@@ -86,7 +88,7 @@ try {
   await page.reload({waitUntil:'domcontentloaded'});
   await page.getByText(message,{exact:true}).first().waitFor({timeout:60000});
   await page.screenshot({path:join(artifacts,'desktop-conversation.png'),fullPage:true});
-  console.log('Packaged Linux desktop: Node selection, keyring, sign-in, encrypted messaging and restore passed');
+  console.log('Packaged Linux desktop: Node selection, keyring, sign-in, Invisible to Online, encrypted messaging and restore passed');
 }catch(error){
   await page?.screenshot({path:join(artifacts,'desktop-failure.png'),fullPage:true}).catch(()=>{});
   const body=await page?.locator('body').innerText({timeout:1000}).catch(()=>'(renderer unavailable)');
