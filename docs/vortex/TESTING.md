@@ -11,6 +11,8 @@ Install a matched Vortex Node and Vortex Chat release. The server installer inst
 
 Keep the desktop keyring unlocked. Vortex refuses to store account keys through a plaintext keyring fallback. After installation, run the application as your regular desktop user, without `sudo`.
 
+Before other tests, open your user menu and switch to **Invisible**, then **Online**. The client should stay connected and continue sending messages. Repeat after a reload and check the status from the second account. An invisible account should appear offline to other users.
+
 ## Test with two accounts
 
 Use separate browser profiles or a browser and the Linux application. A second tab in the same profile can share the first account's local storage.

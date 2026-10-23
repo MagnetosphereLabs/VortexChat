@@ -8,7 +8,7 @@ export async function verifyPresenceChanges(page,origin) {
     // The accessible button names survive those wrappers.
     await page.getByRole('button',{name:/^Open user menu for /}).click();
     await page.getByRole('button',{name:/^(Online|Idle|Do Not Disturb|Invisible)$/}).hover();
-    const choice=page.getByRole('button',{name:new RegExp('^'+label)});
+    const choice=page.locator('[data-flx="app.floating.user-area-popout.status-menu.status-menu-label"]').filter({hasText:new RegExp('^'+label+'$')});
     await Promise.all([
       page.waitForResponse(response=>{
         if(response.url()!==origin+'/chat/action'||response.status()!==200)return false;

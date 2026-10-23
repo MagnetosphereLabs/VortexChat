@@ -55,6 +55,7 @@ export RUSTUP_TOOLCHAIN=1.99.1 NODE_OPTIONS=--max-old-space-size=6144
 export BUILD_CHANNEL=stable PUBLIC_RELEASE_CHANNEL=stable
 export PUBLIC_BUILD_VERSION=0.1.0 BUILD_VERSION=0.1.0
 export PUBLIC_BUILD_SHA="$(git rev-parse HEAD)"
+export VORTEX_BUILD_TARGET="${3:-desktop}"
 export FLUXER_DESKTOP_PRODUCTION=true FLUXER_OFFLINE=1 FLUXER_MODULES=0
 export FLUXER_CI_BIN=/work/target/debug/fluxer-ci USE_SYSTEM_FPM=true
 export FLUXER_ELECTRON_DIST=/work/.vortex-build/electron-runtime
@@ -117,7 +118,14 @@ digest = hashlib.sha256()
 with archive.open('rb') as stream:
     for block in iter(lambda: stream.read(1024**2), b''):
         digest.update(block)
-Path('.vortex-build/build-result.json').write_text(json.dumps({
+result = {
     'source_commit': os.environ['PUBLIC_BUILD_SHA'], 'sha256': digest.hexdigest(),
-    'build_type': 'local-source', 'qualified_release': False}, indent=2) + '\n')
+    'build_type': 'local-source', 'qualified_release': False}
+if os.environ['VORTEX_BUILD_TARGET'] == 'web':
+    web_digest = hashlib.sha256()
+    with Path('.vortex-build/vortex-chat-web.tar.gz').open('rb') as stream:
+        for block in iter(lambda: stream.read(1024**2), b''):
+            web_digest.update(block)
+    result['web_sha256'] = web_digest.hexdigest()
+Path('.vortex-build/build-result.json').write_text(json.dumps(result, indent=2) + '\n')
 PY

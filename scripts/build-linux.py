@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -32,7 +33,12 @@ def main():
     parser.add_argument('--engine', choices=('podman', 'docker'), help='Use an already configured container engine')
     parser.add_argument('--jobs', type=int, default=default_jobs(), help='Parallel Rust jobs (default: CPU/RAM based)')
     parser.add_argument('--with-web', action='store_true', help='Also produce a separate web client archive')
+    parser.add_argument('--deploy-web', metavar='USER@VPS', help='Also build and activate the web client on your existing Node over SSH')
     args = parser.parse_args()
+    if args.deploy_web:
+        if not re.fullmatch(r'(?:[A-Za-z0-9_.-]+@)?[A-Za-z0-9][A-Za-z0-9_.-]*', args.deploy_web):
+            parser.error('--deploy-web must be an SSH hostname or USER@hostname, without options')
+        args.with_web = True
     if os.geteuid() == 0:
         parser.error('Run as your normal desktop user. Only the final installation uses sudo.')
     if platform.system() != 'Linux' or platform.machine() != 'x86_64':
@@ -88,6 +94,27 @@ def main():
             run(*install)
         else:
             print('Install it with:\n' + shlex.join(install), flush=True)
+        if args.deploy_web:
+            web = output / 'vortex-chat-web.tar.gz'
+            checksum = hashlib.sha256()
+            with web.open('rb') as stream:
+                for block in iter(lambda: stream.read(1024**2), b''):
+                    checksum.update(block)
+            digest = checksum.hexdigest()
+            if result.get('web_sha256') != digest:
+                raise ValueError('Web archive differs from its recorded build checksum')
+            target = args.deploy_web
+            remote = run('ssh', target, 'mktemp -d /tmp/vortex-web.XXXXXXXX', capture_output=True, text=True).stdout.strip()
+            if not re.fullmatch(r'/tmp/vortex-web\.[A-Za-z0-9]{8}', remote):
+                raise ValueError('The server returned an unexpected temporary path')
+            try:
+                run('scp', str(web), str(ROOT / 'scripts/deploy-local-web.py'), target + ':' + remote + '/')
+                command = shlex.join(['sudo', 'python3', remote + '/deploy-local-web.py',
+                    '--archive', remote + '/vortex-chat-web.tar.gz', '--sha256', digest,
+                    '--source-commit', result['source_commit']])
+                run('ssh', '-tt', target, command)
+            finally:
+                subprocess.run(['ssh', target, 'rm -rf -- ' + shlex.quote(remote)], check=False)
         print('Rerun the same build command to update. The stopped builder and compilation caches are retained.', flush=True)
 
 

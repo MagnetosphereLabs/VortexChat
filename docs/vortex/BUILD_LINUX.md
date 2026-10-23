@@ -76,4 +76,16 @@ To build without installing, omit `--install`. The command prints the complete i
 
 Add `--with-web` to also create `.vortex-build/vortex-chat-web.tar.gz`. That archive is for development and does not replace the Node installer's published, checksum-pinned client manifest. Normal Node releases install their matching web client automatically.
 
+To install the Linux app and deploy the matching web build to an existing Node, use your normal SSH account for that server:
+
+```sh
+python3 scripts/build-linux.py --install --deploy-web root@your-node-domain
+```
+
+Use the same SSH hostname or alias you normally connect to; the remote account needs sudo access. The command builds both clients on this PC, installs the desktop app locally, transfers the web archive over SSH, verifies its recorded checksum on the server, and switches only the Node's web-client directory. It preserves configuration ownership and permissions, accounts, encrypted storage and Vault selection. A failed service restart restores the previous configuration. SSH host-key checking remains enabled, and the build container has no access to your SSH keys.
+
+This is a direct local testing path, independent of GitHub Actions. The server records the source commit and checksum in `vortex-local-build.json`. Open the Node domain and reload the browser after deployment. Do not clear browser storage or reinstall the Node to apply an interface fix.
+
+A normal Node updater selects the published web client pinned by that Node revision. Until a matched release includes your source fix, update the backend first and run the local build/deploy command afterward. Subsequent local iterations use `git pull --ff-only` followed by the same command and reuse the existing compiler/dependency caches.
+
 The local builder runs installer tests, desktop type checks and encrypted database tests. It does not itself perform the browser, packaged GUI or actual screen-sharing acceptance checks. Those have separate CI and hardware test procedures; compiling successfully does not prove every feature works.
