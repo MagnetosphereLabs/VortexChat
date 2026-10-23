@@ -59,6 +59,8 @@ python3 scripts/build-linux.py --install
 
 The command installs the pinned Node.js, pnpm and Rust toolchains inside the builder, compiles the shared interface and native Linux integrations, verifies the patched Electron runtime, packages the application, and asks for `sudo` only when installing it on your desktop. It prints the failing command if a step fails. Fix that error and rerun the same command; compilation caches are retained.
 
+PipeWire headers are prepared inside the build container; this does not replace your desktop's PipeWire installation. The pinned source archive is downloaded from PipeWire's GitHub mirror, with the upstream GitLab archive as a fallback. Downloads have bounded timeouts and retries, and only checksum-verified complete files enter the persistent container source cache. The libfido2 source uses the same verified cache and retry behavior. A failed download can be retried with the same update command.
+
 The default Rust job count considers your CPU and RAM. On a PC with enough RAM, explicitly choose a larger count, for example:
 
 ```sh

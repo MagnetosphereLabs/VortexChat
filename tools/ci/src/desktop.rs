@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
-use tempfile::TempDir;
+use tempfile::{NamedTempFile, TempDir};
 use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
 
@@ -788,16 +788,94 @@ DPkg::Lock::Timeout "120";
     run_command(CommandSpec::new("sudo").args(["gem", "install", "--no-document", "fpm"]))
 }
 
+async fn download_verified_linux_source(
+    archive_name: &str,
+    urls: &[String],
+    expected_sha256: &str,
+) -> Result<PathBuf> {
+    let cache_dir = require_home()?.join(".cache/vortex-chat/sources");
+    let client = reqwest::Client::builder()
+        .https_only(true)
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .context("Failed to create the source download client")?;
+    download_verified_source_with_client(&cache_dir, archive_name, urls, expected_sha256, &client)
+        .await
+}
+
+async fn download_verified_source_with_client(
+    cache_dir: &Path,
+    archive_name: &str,
+    urls: &[String],
+    expected_sha256: &str,
+    client: &reqwest::Client,
+) -> Result<PathBuf> {
+    fs::create_dir_all(cache_dir)
+        .with_context(|| format!("Failed to create {}", cache_dir.display()))?;
+    let archive_path = cache_dir.join(format!("{expected_sha256}-{archive_name}"));
+    if archive_path.is_file() {
+        if sha256_file(&archive_path)? == expected_sha256 {
+            println!("Using verified cached source: {archive_name}");
+            return Ok(archive_path);
+        }
+        eprintln!("Discarding damaged cached source: {archive_name}");
+        remove_file_if_exists(&archive_path)?;
+    }
+
+    let mut failures = Vec::new();
+    for attempt in 1..=2 {
+        for url in urls {
+            println!("Downloading {archive_name} (attempt {attempt}/2): {url}");
+            let download: Result<()> = async {
+                let mut response = client.get(url).send().await?.error_for_status()?;
+                let mut temporary = NamedTempFile::new_in(cache_dir)?;
+                let mut size = 0usize;
+                while let Some(chunk) = response.chunk().await? {
+                    size = size.saturating_add(chunk.len());
+                    ensure!(size <= 16 * 1024 * 1024, "Source archive exceeds 16 MiB");
+                    temporary.write_all(&chunk)?;
+                }
+                temporary.flush()?;
+                let actual = sha256_file(temporary.path())?;
+                ensure!(
+                    actual == expected_sha256,
+                    "Source checksum mismatch: expected {expected_sha256}, got {actual}"
+                );
+                temporary.persist(&archive_path).with_context(|| {
+                    format!("Failed to cache verified source {}", archive_path.display())
+                })?;
+                Ok(())
+            }
+            .await;
+            match download {
+                Ok(()) => return Ok(archive_path),
+                Err(error) => {
+                    let failure = format!("{url}: {error:#}");
+                    eprintln!("Source download failed; trying the next source: {failure}");
+                    failures.push(failure);
+                }
+            }
+        }
+        if attempt == 1 {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    }
+    bail!("Could not download verified {archive_name}: {}", failures.join("; "))
+}
+
 async fn install_linux_pipewire_headers() -> Result<()> {
     let temp = TempDir::new().context("Failed to create PipeWire header build directory")?;
     let archive_name = format!("pipewire-{LINUX_PIPEWIRE_VERSION}.tar.gz");
-    let archive_path = temp.path().join(&archive_name);
     let source_dir = temp.path().join("source");
     let build_dir = temp.path().join("build");
     let staging_dir = temp.path().join("stage");
-    let source_url = format!(
-        "https://gitlab.freedesktop.org/pipewire/pipewire/-/archive/{LINUX_PIPEWIRE_VERSION}/{archive_name}"
-    );
+    // Both mirrors provide the same pinned archive bytes. Keep the build independent
+    // of GitLab availability without relaxing source integrity checks.
+    let source_urls = [
+        format!("https://codeload.github.com/PipeWire/pipewire/tar.gz/refs/tags/{LINUX_PIPEWIRE_VERSION}"),
+        format!("https://gitlab.freedesktop.org/pipewire/pipewire/-/archive/{LINUX_PIPEWIRE_VERSION}/{archive_name}"),
+    ];
     let multiarch = linux_multiarch()?;
     let install_library_dir = Path::new("/usr/local/lib").join(&multiarch);
     let install_pkgconfig_dir = install_library_dir.join("pkgconfig");
@@ -830,14 +908,12 @@ async fn install_linux_pipewire_headers() -> Result<()> {
         return Ok(());
     }
 
-    download_file(&source_url, &archive_path).await?;
-    let archive_sha256 = sha256_file(&archive_path)?;
-    ensure!(
-        archive_sha256 == LINUX_PIPEWIRE_SOURCE_SHA256,
-        "PipeWire source checksum mismatch: expected {}, got {}",
+    let archive_path = download_verified_linux_source(
+        &archive_name,
+        &source_urls,
         LINUX_PIPEWIRE_SOURCE_SHA256,
-        archive_sha256
-    );
+    )
+    .await?;
 
     fs::create_dir_all(&source_dir)
         .with_context(|| format!("Failed to create {}", source_dir.display()))?;
@@ -1049,7 +1125,6 @@ fn verify_linux_pipewire_header_overlay(
 async fn install_linux_libfido2() -> Result<()> {
     let temp = TempDir::new().context("Failed to create libfido2 build directory")?;
     let archive_name = format!("libfido2-{LINUX_LIBFIDO2_VERSION}.tar.gz");
-    let archive_path = temp.path().join(&archive_name);
     let source_dir = temp.path().join("source");
     let build_dir = temp.path().join("build");
     let source_url = format!("https://developers.yubico.com/libfido2/Releases/{archive_name}");
@@ -1057,14 +1132,12 @@ async fn install_linux_libfido2() -> Result<()> {
     let install_library_dir = Path::new("/usr/local/lib").join(&multiarch);
     let install_library_arg = format!("-DCMAKE_INSTALL_LIBDIR=lib/{multiarch}");
 
-    download_file(&source_url, &archive_path).await?;
-    let archive_sha256 = sha256_file(&archive_path)?;
-    ensure!(
-        archive_sha256 == LINUX_LIBFIDO2_SOURCE_SHA256,
-        "libfido2 source checksum mismatch: expected {}, got {}",
+    let archive_path = download_verified_linux_source(
+        &archive_name,
+        &[source_url],
         LINUX_LIBFIDO2_SOURCE_SHA256,
-        archive_sha256
-    );
+    )
+    .await?;
 
     fs::create_dir_all(&source_dir)
         .with_context(|| format!("Failed to create {}", source_dir.display()))?;
@@ -6985,6 +7058,61 @@ fn print_tree(root: &Path, max_depth: usize) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn source_download_falls_back_after_server_error_and_bad_checksum() {
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let body = b"verified source";
+        let digest = hex::encode(Sha256::digest(body));
+        let server = thread::spawn(move || {
+            for (status, content) in [
+                ("500 Internal Server Error", b"temporary failure".as_slice()),
+                ("200 OK", b"wrong archive".as_slice()),
+                ("200 OK", body.as_slice()),
+            ] {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                let mut request = [0u8; 4096];
+                stream.read(&mut request).unwrap();
+                write!(stream, "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", content.len()).unwrap();
+                stream.write_all(content).unwrap();
+            }
+        });
+        let directory = TempDir::new().unwrap();
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+        let urls: Vec<String> = (0..3).map(|n| format!("http://{address}/{n}")).collect();
+        let archive = download_verified_source_with_client(
+            directory.path(), "source.tar.gz", &urls, &digest, &client,
+        ).await.unwrap();
+        server.join().unwrap();
+        assert_eq!(fs::read(&archive).unwrap(), body);
+        // A valid cache must work without any network source on the next run.
+        assert_eq!(download_verified_source_with_client(
+            directory.path(), "source.tar.gz", &[], &digest, &client,
+        ).await.unwrap(), archive);
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+
+    #[tokio::test]
+    async fn source_download_rejects_damaged_cache_without_publishing_partial_files() {
+        let directory = TempDir::new().unwrap();
+        let digest = hex::encode(Sha256::digest(b"expected source"));
+        let archive = directory.path().join(format!("{digest}-source.tar.gz"));
+        fs::write(&archive, b"damaged cache").unwrap();
+        let client = reqwest::Client::new();
+        let result = download_verified_source_with_client(
+            directory.path(), "source.tar.gz", &["invalid URL".into()], &digest, &client,
+        ).await;
+        assert!(result.is_err());
+        assert!(!archive.exists());
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
 
     fn live_manifest(platform: &str, arch: &str, shell: &str) -> Value {
         json!({
