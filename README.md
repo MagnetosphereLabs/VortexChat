@@ -32,6 +32,8 @@ To compile on your own Linux PC, follow the [local build guide](docs/vortex/BUIL
 python3 scripts/build-linux.py --install
 ```
 
+For repeated desktop and existing-Node updates, use `bash scripts/update-local.sh`. It remembers your SSH connection, builds locally, updates the backend when needed and deploys the matching website. See the [combined update guide](docs/vortex/BUILD_LINUX.md#updating-the-desktop-app-and-existing-node-together) for initial configuration.
+
 It keeps the compiler toolchains and dependencies in a reusable build container, then installs the application with its desktop launcher and sandbox. See [trying Vortex Chat](docs/vortex/TESTING.md) for first connection, two-account testing and screen sharing.
 
 ## Development

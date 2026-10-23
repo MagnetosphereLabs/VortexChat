@@ -19,8 +19,8 @@ class BuildUserTests(unittest.TestCase):
             cache.write_text('keep')
             account = SimpleNamespace(pw_name='ubuntu', pw_gid=1000, pw_dir=str(directory))
             with patch.object(accounts.grp, 'getgrgid'), patch.object(accounts.pwd, 'getpwuid', return_value=account), patch.object(accounts.subprocess, 'run') as run, patch.object(accounts.os, 'chown'):
-                self.assertEqual(accounts.prepare(1000, 1000), 'ubuntu')
-                self.assertEqual(accounts.prepare(1000, 1000), 'ubuntu')
+                self.assertEqual(accounts.prepare(1000, 1000)['user'], 'ubuntu')
+                self.assertEqual(accounts.prepare(1000, 1000)['user'], 'ubuntu')
             run.assert_not_called()
             self.assertEqual(cache.read_text(), 'keep')
 
@@ -28,23 +28,37 @@ class BuildUserTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             account = SimpleNamespace(pw_name='builder', pw_gid=1000, pw_dir=str(Path(temporary) / 'builder'))
             with patch.object(accounts.grp, 'getgrgid'), patch.object(accounts.pwd, 'getpwuid', side_effect=[KeyError(1000), account]), patch.object(accounts.pwd, 'getpwnam', side_effect=KeyError('builder')), patch.object(accounts.subprocess, 'run') as run, patch.object(accounts.os, 'chown'):
-                self.assertEqual(accounts.prepare(1000, 1000), 'builder')
+                self.assertEqual(accounts.prepare(1000, 1000)['user'], 'builder')
             self.assertEqual(run.call_args.args[0], ['useradd', '--uid', '1000', '--gid', '1000', '--create-home', '--shell', '/bin/bash', 'builder'])
 
     def test_occupied_builder_name_does_not_remap_another_uid(self):
         with tempfile.TemporaryDirectory() as temporary:
             account = SimpleNamespace(pw_name='vortex-builder-1000', pw_gid=1000, pw_dir=str(Path(temporary) / 'home'))
             with patch.object(accounts.grp, 'getgrgid'), patch.object(accounts.pwd, 'getpwuid', side_effect=[KeyError(1000), account]), patch.object(accounts.pwd, 'getpwnam', side_effect=[SimpleNamespace(pw_uid=1001), KeyError('free')]), patch.object(accounts.subprocess, 'run') as run, patch.object(accounts.os, 'chown'):
-                self.assertEqual(accounts.prepare(1000, 1000), 'vortex-builder-1000')
+                self.assertEqual(accounts.prepare(1000, 1000)['user'], 'vortex-builder-1000')
             self.assertEqual(run.call_args.args[0][-1], 'vortex-builder-1000')
             self.assertNotIn('usermod', run.call_args.args[0])
 
-    def test_existing_uid_primary_group_is_aligned_without_changing_its_uid(self):
+    def test_existing_passwd_entry_is_not_modified_for_a_different_primary_group(self):
         with tempfile.TemporaryDirectory() as temporary:
             account = SimpleNamespace(pw_name='ubuntu', pw_gid=1001, pw_dir=temporary)
             with patch.object(accounts.grp, 'getgrgid'), patch.object(accounts.pwd, 'getpwuid', return_value=account), patch.object(accounts.subprocess, 'run') as run, patch.object(accounts.os, 'chown'):
-                self.assertEqual(accounts.prepare(1000, 1000), 'ubuntu')
-            self.assertEqual(run.call_args.args[0], ['usermod', '--gid', '1000', 'ubuntu'])
+                self.assertEqual(accounts.prepare(1000, 1000)['user'], 'ubuntu')
+            run.assert_not_called()
+
+    def test_rootless_podman_home_uses_a_private_cache_without_editing_passwd(self):
+        for home in ('/work', '/work/project', '/root', '/', 'relative'):
+            with self.subTest(home=home), tempfile.TemporaryDirectory() as temporary:
+                account = SimpleNamespace(pw_name='desktop', pw_gid=1000, pw_dir=home)
+                cache = Path(temporary) / 'cache'
+                with patch.object(accounts.grp, 'getgrgid'), patch.object(accounts.pwd, 'getpwuid', return_value=account), patch.object(accounts.subprocess, 'run') as run, patch.object(accounts.os, 'chown') as chown:
+                    identity = accounts.prepare(1000, 1000, cache)
+                    again = accounts.prepare(1000, 1000, cache)
+                self.assertEqual(identity, again)
+                self.assertEqual(identity['home'], str(cache / '1000'))
+                self.assertEqual((identity['uid'], identity['gid']), (1000, 1000))
+                run.assert_not_called()
+                chown.assert_called_with(cache / '1000', 1000, 1000)
 
 
 if __name__ == '__main__':

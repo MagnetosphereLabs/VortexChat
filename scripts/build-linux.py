@@ -28,7 +28,7 @@ def default_jobs():
     return max(1, min(os.cpu_count() or 2, memory // (2 * 1024**3)))
 
 
-def ssh_transport(target, port=None):
+def ssh_transport(target, port=None, ssh_options=()):
     if port is not None and (not isinstance(port, int) or not 1 <= port <= 65535):
         raise ValueError('SSH port must be between 1 and 65535')
     if '@' in target:
@@ -49,11 +49,16 @@ def ssh_transport(target, port=None):
         raise ValueError('Enter a valid VPS IP address, hostname or SSH alias')
     ssh = ['ssh'] + (['-p', str(port)] if port is not None else [])
     scp = ['scp'] + (['-P', str(port)] if port is not None else [])
+    for option in ssh_options:
+        ssh.extend(['-o', option])
+        scp.extend(['-o', option])
     return ssh, scp, prefix + host, prefix + copy_host
 
 
-def deploy_web(output, result, target, port=None):
-    ssh, scp, ssh_target, copy_target = ssh_transport(target, port)
+def deploy_web(output, result, target, port=None, node_revision=None, ssh_options=()):
+    ssh, scp, ssh_target, copy_target = ssh_transport(target, port, ssh_options)
+    if node_revision is not None and not re.fullmatch(r'[a-f0-9]{40}', node_revision):
+        raise ValueError('A full Node revision is required')
     web = output / 'vortex-chat-web.tar.gz'
     checksum = hashlib.sha256()
     with web.open('rb') as stream:
@@ -70,9 +75,27 @@ def deploy_web(output, result, target, port=None):
         command = shlex.join(['sudo', 'python3', remote + '/deploy-local-web.py',
             '--archive', remote + '/vortex-chat-web.tar.gz', '--sha256', digest,
             '--source-commit', result['source_commit']])
+        if node_revision:
+            command = ('set -e\n'
+                'test -x /opt/vortex-node/install.sh || { echo "Existing Vortex Node installer was not found" >&2; exit 1; }\n'
+                'vortex_installed_ref=$(basename "$(readlink -f /opt/vortex-node/current)")\n'
+                'if [ "$vortex_installed_ref" != ' + shlex.quote(node_revision) + ' ]; then\n'
+                '  sudo /opt/vortex-node/install.sh update --ref vortex/preview\n'
+                'else\n  echo "Vortex Node backend is already current"\nfi\n' + command)
         run(*ssh, '-tt', ssh_target, command)
     finally:
         subprocess.run([*ssh, ssh_target, 'rm -rf -- ' + shlex.quote(remote)], check=False)
+
+
+def container_build_command(engine, container, identity, jobs, with_web):
+    user, home = identity['user'], identity['home']
+    if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.-]*\$?', user) or not Path(home).is_absolute():
+        raise ValueError('The build container returned an invalid account')
+    # These login environment values apply only to the container build process.
+    return [engine, 'exec', '--user', str(identity['uid']) + ':' + str(identity['gid']),
+            '--env', 'HOME=' + home, '--env', 'USER=' + user, '--env', 'LOGNAME=' + user,
+            container, 'bash', '/work/scripts/build-linux-container.sh', '--build', str(jobs),
+            'web' if with_web else 'desktop']
 
 
 def main():
@@ -125,14 +148,12 @@ def main():
         try:
             run(engine, 'exec', '--user', '0', container, 'bash', '/work/scripts/build-linux-container.sh',
                 '--prepare', os.getuid(), os.getgid())
-            builder_user = run(engine, 'exec', '--user', '0', container, 'cat',
-                               '/var/lib/vortex-builder-user', capture_output=True, text=True).stdout.strip()
-            if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.-]*\$?', builder_user):
-                raise ValueError('The build container returned an invalid account name')
+            identity = json.loads(run(engine, 'exec', '--user', '0', container, 'cat',
+                                 '/var/lib/vortex-builder.json', capture_output=True, text=True).stdout)
+            if identity['uid'] != os.getuid() or identity['gid'] != os.getgid():
+                raise ValueError('The container build account does not match this desktop user')
             (output / 'build-result.json').unlink(missing_ok=True)
-            command = shlex.join(['bash', '/work/scripts/build-linux-container.sh', '--build',
-                                  str(args.jobs), 'web' if args.with_web else 'desktop'])
-            run(engine, 'exec', '--user', '0', container, 'su', '--login', '--shell', '/bin/bash', builder_user, '--command', command)
+            run(*container_build_command(engine, container, identity, args.jobs, args.with_web))
         finally:
             subprocess.run([engine, 'stop', '--time', '10', container], check=False)
         result = json.loads((output / 'build-result.json').read_text())

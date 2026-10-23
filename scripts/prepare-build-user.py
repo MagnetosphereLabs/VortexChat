@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Select a container account matching the desktop user's numeric identity."""
 import grp
+import json
 import os
 from pathlib import Path
 import pwd
@@ -10,7 +11,7 @@ import subprocess
 import sys
 
 
-def prepare(uid, gid):
+def prepare(uid, gid, cache_root=Path('/var/cache/vortex-chat-build')):
     if uid <= 0 or gid < 0:
         raise ValueError('The builder requires a non-root desktop UID')
     try:
@@ -32,17 +33,19 @@ def prepare(uid, gid):
         account = pwd.getpwuid(uid)
     if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.-]*\$?', account.pw_name):
         raise ValueError('The existing build account has an unsupported name')
-    if account.pw_gid != gid:
-        subprocess.run(['usermod', '--gid', str(gid), account.pw_name], check=True, stdout=sys.stderr)
     directory = Path(account.pw_dir)
-    if not directory.is_absolute() or directory in (Path('/'), Path('/root'), Path('/work')):
-        raise ValueError('The build account must have its own absolute home directory')
+    # Rootless Podman can inject the host UID with /work as its home. Do not
+    # change that passwd entry or the mounted checkout's ownership.
+    if (not directory.is_absolute() or directory == Path('/')
+            or directory.resolve().is_relative_to('/root')
+            or directory.resolve().is_relative_to('/work')):
+        directory = cache_root / str(uid)
     directory.mkdir(parents=True, exist_ok=True)
     os.chown(directory, uid, gid)
-    return account.pw_name
+    return {'user': account.pw_name, 'uid': uid, 'gid': gid, 'home': str(directory)}
 
 
 if __name__ == '__main__':
     if os.geteuid() != 0 or len(sys.argv) != 3:
         raise SystemExit('Run inside the build container as root with UID and GID')
-    print(prepare(int(sys.argv[1]), int(sys.argv[2])))
+    print(json.dumps(prepare(int(sys.argv[1]), int(sys.argv[2]))))

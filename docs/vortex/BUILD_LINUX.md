@@ -4,6 +4,24 @@ Use this when you want to compile the client yourself or do not want to wait for
 
 This builds a local development application, not a qualified release. The backend must also be a matching Vortex Node integration version. An upstream Fluxer server or an old Vortex Node does not provide this protocol.
 
+## Updating the desktop app and existing Node together
+
+From your checkout, run this once with your SSH connection details:
+
+```sh
+bash scripts/update-local.sh --host YOUR_VPS_IP --port YOUR_SSH_PORT --user YOUR_SSH_USERNAME
+```
+
+For subsequent updates, run the same script without arguments:
+
+```sh
+bash scripts/update-local.sh
+```
+
+It pulls the source, remembers the connection privately in the ignored `.vortex-build/connection.json`, builds and installs the desktop app, updates the existing Node backend when its revision changes, and deploys the matching web client afterward. A client build failure stops before any backend update. Completed unchanged builds are checksum-verified and reused on a retry. Compiler caches and the build container are retained. SSH connections are shared during deployment; passwords and private keys are never stored in the connection file or mounted in the builder. Authentication and sudo may still prompt when required by your system.
+
+Use `--configure` to change the saved connection. Run the script as your normal desktop user. Your existing Node account, domain and application selection are handled by its installed updater. The source-built web client is deployed after the backend so a backend update cannot leave the older published browser bundle selected.
+
 ## 1. Install the build launcher
 
 On Ubuntu, Pop!_OS or Linux Mint:

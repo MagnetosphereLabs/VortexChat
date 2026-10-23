@@ -43,10 +43,10 @@ PY
     fi
     touch /var/lib/vortex-builder-tools-v1
   fi
-  builder_user="$(python3 /work/scripts/prepare-build-user.py "$builder_uid" "$builder_gid")"
+  python3 /work/scripts/prepare-build-user.py "$builder_uid" "$builder_gid" > /var/lib/vortex-builder.json
+  builder_user="$(python3 -c 'import json; print(json.load(open("/var/lib/vortex-builder.json"))["user"])')"
   printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$builder_user" > /etc/sudoers.d/vortex-builder
   chmod 0440 /etc/sudoers.d/vortex-builder
-  printf '%s\n' "$builder_user" > /var/lib/vortex-builder-user
   touch /var/lib/vortex-builder-v1
   exit 0
 fi
