@@ -2,14 +2,14 @@
 import {getSession} from './Session.js';
 import {verifyNode} from './Rest.js';
 import {auth} from './vendor/auth.js';
-import {channelView,guildView,materializeMessages,callView} from './Projection.js';
+import {channelView,guildView,materializeMessages,callView,userView} from './Projection.js';
 import {mediaEndpoint} from './MediaEndpoint.js';
 import {memberListView} from './MemberList.js';
 import {presenceStatus,userSettingsView} from './UserSettingsView.js';
 
 export class VortexGateway {
   kind='browser';readyState=0;listeners=new Map();sequence=0;sessionId=crypto.randomUUID();seen=new Map();channels=new Map();guilds=new Map();relationships=new Map();voiceEvents=new Set();
-  presences=new Map();typing=new Map();calls=new Map();status='online';
+  users=new Map();presences=new Map();typing=new Map();calls=new Map();status='online';
   memberSubscriptions=new Map();memberSnapshots=new Map();
   constructor(url){const parsed=new URL(url);parsed.protocol=parsed.protocol==='wss:'?'https:':'http:';this.origin=auth.origin(parsed.origin);}
   on(event,listener){let listeners=this.listeners.get(event);if(!listeners){listeners=new Set();this.listeners.set(event,listeners);}listeners.add(listener);return()=>listeners.delete(listener);}
@@ -67,13 +67,16 @@ export class VortexGateway {
       this.dispatch(type,body);
     };
     this.session.listeners.add(this.onDispatch);
-    await this.heartbeat();await this.session.refresh();
+    await this.heartbeat();
+    if(Date.now()-(this.session.refreshedAt||0)>2000)await this.session.refresh();
     const ready=await this.session.ready(this.sessionId);
     for(const guild of ready.guilds)this.guilds.set(guild.id,guild);
     for(const channel of [...ready.private_channels,...ready.guilds.flatMap(g=>g.channels)])this.channels.set(channel.id,channel);
     for(const relationship of ready.relationships)this.relationships.set(relationship.id,relationship);
     // READY provides channels and read state; old messages are loaded by history requests.
     for(const room of this.session.core.state.rooms)for(const event of materializeMessages(this.session.core.state,room))this.seen.set(event.id,JSON.stringify({...event,reactions:[...event.reactions].map(([key,people])=>[key,[...people]])}));
+    for(const user of this.session.core.state.users){const view=userView(this.session.ids,user);this.users.set(view.id,JSON.stringify(view));}
+    this.lastSettings=JSON.stringify(ready.user_settings);this.lastCurrentUser=JSON.stringify(ready.user);
     this.dispatch('READY',ready);
     for(const presence of ready.presences)this.presences.set(presence.user.id,presence.status);
     this.heartbeatTimer=setInterval(()=>{void this.heartbeat().catch(error=>this.fail(error));},20000);
@@ -117,14 +120,20 @@ export class VortexGateway {
   async refreshNow() {
       await this.session.refresh();const {state}=this.session.core,ids=this.session.ids;
       for(const user of state.users) {
+        const view=userView(ids,user),snapshot=JSON.stringify(view);
+        if(this.users.get(view.id)!==snapshot){this.dispatch('USER_UPDATE',user.id===state.me.id?this.session.currentUser():view);this.users.set(view.id,snapshot);}
         const id=ids.get('user',user.id),status=user.status||'offline';
         if(this.presences.get(id)!==status){this.dispatch('PRESENCE_UPDATE',{user:{id},status,activities:[]});this.presences.set(id,status);}
       }
+      const settings=userSettingsView(state),currentUser=this.session.currentUser();
+      if(JSON.stringify(settings)!==this.lastSettings){this.lastSettings=JSON.stringify(settings);this.dispatch('USER_SETTINGS_UPDATE',settings);}
+      if(JSON.stringify(currentUser)!==this.lastCurrentUser){this.lastCurrentUser=JSON.stringify(currentUser);this.dispatch('USER_UPDATE',currentUser);}
       const liveGuilds=new Set(),liveChannels=new Set();
       for(const space of state.spaces) {
         const guild=guildView(ids,state,space),previous=this.guilds.get(guild.id);liveGuilds.add(guild.id);
         if(!previous)this.dispatch('GUILD_CREATE',guild);
         else {
+          if(JSON.stringify(previous.stickers)!==JSON.stringify(guild.stickers))this.dispatch('GUILD_STICKERS_UPDATE',{guild_id:guild.id,stickers:guild.stickers});
           if(JSON.stringify(previous.emojis)!==JSON.stringify(guild.emojis))this.dispatch('GUILD_EMOJIS_UPDATE',{guild_id:guild.id,emojis:guild.emojis});
           if(JSON.stringify(previous.properties)!==JSON.stringify(guild.properties)||previous.member_count!==guild.member_count)
             this.dispatch('GUILD_UPDATE',{...guild.properties,member_count:guild.member_count});

@@ -204,15 +204,19 @@ async function roomKeys(t) {
   };
   return state.keys.set(t.id, h), h;
 }
+const verifiedIdentities = new Map();
 async function verifyIdentity(t) {
-  let A = await digest(enc.encode(JSON.stringify(t.identity))),
+  const encoded=JSON.stringify(t.identity);
+  const cacheKey=state.pair.node+":"+t.id;
+  const known=verifiedIdentities.get(cacheKey);
+  if(known?.identity===encoded)return known.fingerprint;
+  let A = await digest(enc.encode(encoded)),
     e = "identity:" + state.pair.node + ":" + t.id,
     i = await store("get", e);
   if (i && i.fingerprint !== A) throw Error("The identity key for " + t.username + " changed. Verify their identity before continuing.");
-  return i || (await store("set", e, {
-    fingerprint: A,
-    since: Date.now()
-  })), A;
+  if(!i)await store("set",e,{fingerprint:A,since:Date.now()});
+  verifiedIdentities.set(cacheKey,{identity:encoded,fingerprint:A});
+  return A;
 }
 let userById = t => state.users.find(A => A.id === t) || state.formerUsers?.find(A => A.id === t) || {
   id: t,
@@ -839,10 +843,14 @@ function sync(fresh=false) {
     const directory=await action('directory');
     for(const user of directory.users) await verifyIdentity(user);
     state.users=directory.users;
+    if(directory.privacy)state.me.privacy=directory.privacy;
+    if(typeof directory.totp==='boolean')state.me.totp=directory.totp;
     await action('friends');
     await refreshRooms();
-    await withDeviceLock(flushOutbox);
-    for(const room of state.rooms) await withDeviceLock(()=>syncRoom(room));
+    await withDeviceLock(async()=>{
+      await flushOutbox();
+      for(const room of state.rooms) await syncRoom(room);
+    });
     await qc();
   })().finally(()=>{synchronizing=undefined;});
   return synchronizing;
@@ -977,5 +985,5 @@ function close() {
   state.keys.clear();state.messages.clear();
 }
 return {state,connect,sync,close,send,createRoom,removeMembers,upload,download,downloadChunks,loadHistory,
-  action,roomKeys,wrapKey,sign,verifySignature,savePreferences,archiveEvents,withDeviceLock,syncRoom,mediaKey,command,inviteSpace,invitations,respondInvitation,updateMetadata};
+  action,roomKeys,wrapKey,sign,verifySignature,verifyIdentity,openInvitationBox,savePreferences,archiveEvents,withDeviceLock,syncRoom,mediaKey,command,inviteSpace,invitations,respondInvitation,updateMetadata};
 }

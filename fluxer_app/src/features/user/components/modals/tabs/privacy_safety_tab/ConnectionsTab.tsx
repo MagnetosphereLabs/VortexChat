@@ -16,6 +16,8 @@ import * as UserSettingsCommands from '@app/features/user/commands/UserSettingsC
 import {PrivacySetupModal} from '@app/features/user/components/modals/PrivacySetupModal';
 import styles from '@app/features/user/components/modals/tabs/privacy_safety_tab/ConnectionsTab.module.css';
 import UserSettings from '@app/features/user/state/UserSettings';
+import RuntimeConfig from '@app/features/app/state/RuntimeConfig';
+import {vortexOrigin} from '@app/vortex/Rest.js';
 import {FriendSourceFlags} from '@fluxer/constants/src/UserConstants';
 import {msg} from '@lingui/core/macro';
 import {Trans, useLingui} from '@lingui/react/macro';
@@ -183,7 +185,7 @@ const PrivacyReviewAlert = observer(() => {
 			)),
 		);
 	}, []);
-	if (!UserSettings.isPrivacySetupPending()) {
+	if (vortexOrigin(RuntimeConfig.apiEndpoint) || !UserSettings.isPrivacySetupPending()) {
 		return null;
 	}
 	return (
@@ -305,36 +307,45 @@ export const ConnectionsTabContent: React.FC = observer(() => {
 				/>
 			</SettingsTabSection>
 			<PrivacyReviewAlert data-flx="user.privacy-safety-tab.connections-tab.connections-tab-content.privacy-review-alert" />
-			<SettingsTabSection
-				title={<Trans>Direct messages</Trans>}
-				description={
-					<Trans>
-						Friends can always message you. These settings cover people and bots you only share a community with.
-					</Trans>
-				}
-				data-flx="user.privacy-safety-tab.connections-tab.connections-tab-content.settings-tab-section--2"
-			>
-				<Switch
-					label={<Trans>Allow direct messages from community members</Trans>}
-					description={
-						<Trans>Applies to communities you join from now on. You can also change it for each community.</Trans>
-					}
-					value={!defaultGuildsRestricted}
-					onChange={handleDirectMessagesToggle}
-					data-flx="user.privacy-safety-tab.connections-tab.connections-tab-content.switch.direct-messages-toggle"
-				/>
-				<Switch
-					label={<Trans>Allow direct messages from community bots</Trans>}
+			{vortexOrigin(RuntimeConfig.apiEndpoint) ? (
+				<SettingsTabSection
+					title="Direct messages"
+					description="Direct messages and one-to-one calls on this Node require an accepted friendship. Block an account or remove the friendship to stop new direct messages and calls."
+				>
+					{null}
+				</SettingsTabSection>
+			) : (
+				<SettingsTabSection
+					title={<Trans>Direct messages</Trans>}
 					description={
 						<Trans>
-							Applies to bots in communities you join from now on. You can also change it for each community.
+							Friends can always message you. These settings cover people and bots you only share a community with.
 						</Trans>
 					}
-					value={!botDefaultGuildsRestricted}
-					onChange={handleBotDirectMessagesToggle}
-					data-flx="user.privacy-safety-tab.connections-tab.connections-tab-content.switch.bot-direct-messages-toggle"
-				/>
-			</SettingsTabSection>
+					data-flx="user.privacy-safety-tab.connections-tab.connections-tab-content.settings-tab-section--2"
+				>
+					<Switch
+						label={<Trans>Allow direct messages from community members</Trans>}
+						description={
+							<Trans>Applies to communities you join from now on. You can also change it for each community.</Trans>
+						}
+						value={!defaultGuildsRestricted}
+						onChange={handleDirectMessagesToggle}
+						data-flx="user.privacy-safety-tab.connections-tab.connections-tab-content.switch.direct-messages-toggle"
+					/>
+					<Switch
+						label={<Trans>Allow direct messages from community bots</Trans>}
+						description={
+							<Trans>
+								Applies to bots in communities you join from now on. You can also change it for each community.
+							</Trans>
+						}
+						value={!botDefaultGuildsRestricted}
+						onChange={handleBotDirectMessagesToggle}
+						data-flx="user.privacy-safety-tab.connections-tab.connections-tab-content.switch.bot-direct-messages-toggle"
+					/>
+				</SettingsTabSection>
+			)}
 		</>
 	);
 });

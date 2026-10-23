@@ -111,7 +111,8 @@ export const DMChannelView = observer(({channelId}: DMChannelViewProps) => {
 	const callHeaderState = useCallHeaderState(channel);
 	const call = callHeaderState.call;
 	const isInCallVariant = callHeaderState.controlsVariant === 'inCall';
-	const showCompactVoiceView = isInCallVariant && callHeaderState.isDeviceInRoomForChannelCall;
+	const isMobileExperience = isMobileExperienceEnabled();
+	const showCompactVoiceView = !isMobileExperience && isInCallVariant && callHeaderState.isDeviceInRoomForChannelCall;
 	const memberListDefaultHiddenForChannel = Boolean(isGroupDM && showCompactVoiceView);
 	const isMemberListVisible = useMemberListVisible({
 		channelId: currentChannelId,
@@ -122,7 +123,6 @@ export const DMChannelView = observer(({channelId}: DMChannelViewProps) => {
 	const controlsVariant = callHeaderState.controlsVariant;
 	const showCallBackground = callExistsAndOngoing && controlsVariant !== 'hidden';
 	const compactCallUnreadCount = currentChannelId ? ReadStates.getUnreadCount(currentChannelId) : 0;
-	const isMobileExperience = isMobileExperienceEnabled();
 	const isCompactCallResizable = !isMobileExperience;
 	const compactCallHeightMin = COMPACT_VOICE_CALL_HEIGHT_MIN;
 	const compactCallHeightKey = useMemo(() => {

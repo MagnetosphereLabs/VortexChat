@@ -12,7 +12,9 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {auth} from './vendor/auth.js';
 import {createVortexCore} from './Core.js';
 import {vortexRequest} from './Rest.js';
-import {getSession} from './Session.js';
+import {VortexSession,getSession} from './Session.js';
+import {invitationCodes} from './Invitations.js';
+import {publicCredential} from './AccountSecurity.js';
 import {VortexGateway} from './Gateway.js';
 
 // The WASM store contains unordered maps. Compare their canonical digest so a
@@ -25,7 +27,7 @@ function ratchetDigest(engine) {
   return createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
 }
 
-test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', {timeout:120000}, async t=>{
+async function startNode(t) {
   const cleanup=[];
   assert.ok(process.env.VORTEX_NODE_BINARY,'Set VORTEX_NODE_BINARY to the compiled Node binary');
   const binary=resolve(process.env.VORTEX_NODE_BINARY);
@@ -54,6 +56,11 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   assert.equal((await fetch(url+'/health')).status,200,stderr);
   const owner=await auth.login({url,username:'node.owner',password});
   await auth.api(url,'policy',{title:'Private test Node',signupUntil:Math.floor(Date.now()/1000)+600,createSpaces:'everyone',chatQuota:0,maxUpload:10485760},owner.token);
+  return {url,password,owner,cleanup};
+}
+
+test('OPAQUE, MLS, encrypted files, profiles and invitations remain private from the Node operator', {timeout:120000}, async t=>{
+  const {url,password,owner,cleanup}=await startNode(t);
   await auth.register({url,username:'alice.test',password});
   const alicePair=await auth.login({url,username:'alice.test',password});
   const alice=createVortexCore({notice:message=>{throw new Error(message);}});
@@ -145,13 +152,53 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
     await request('PUT','/channels/'+channel+'/messages/'+sent.id+'/reactions/'+encodeURIComponent('private_wave:'+emoji.id)+'/@me');
     const reacted=(await request('GET','/channels/'+channel+'/messages/'+sent.id)).body;
     assert.equal(reacted.reactions[0].emoji.id,emoji.id);
+    const reactionPath='/channels/'+channel+'/messages/'+sent.id+'/reactions/'+encodeURIComponent('private_wave:'+emoji.id)+'/@me';
+    await request('DELETE',reactionPath);await client.refresh(true);
+    assert.equal((await request('GET','/channels/'+channel+'/messages/'+sent.id)).body.reactions.length,0,'Custom reactions stay removed after synchronization');
+    const emojiFile=client.core.state.vortexEmojis.find(item=>item.id===emoji.id).file;
+    const target=client.ids.raw('message',sent.id),reactionRoom=client.room(channel);
+    await client.core.send({type:'reaction',target,emoji:'custom:node:legacy-wave',emojiFile,emojiName:'private_wave'},'message',reactionRoom);
+    await client.core.send({type:'reaction',target,emoji:'custom:'+emojiFile.id,emojiFile,emojiName:'private_wave'},'message',reactionRoom);
+    assert.equal((await request('GET','/channels/'+channel+'/messages/'+sent.id)).body.reactions.length,1,'Legacy aliases render one reaction');
+    await request('DELETE',reactionPath);await client.refresh(true);
+    assert.equal((await request('GET','/channels/'+channel+'/messages/'+sent.id)).body.reactions.length,0,'Removing an emoji also removes older aliases');
+    await request('PATCH','/users/@me',{bio:'Encrypted profile biography',pronouns:'they/them',avatar:image,banner:image,accent_color:1234});
+    const profile=(await request('GET','/users/'+me.id+'/profile')).body;
+    assert.equal(profile.user_profile.bio,'Encrypted profile biography');assert.match(profile.user.avatar,/^vortex_/u);assert.match(profile.user_profile.banner,/^vortex_/u);
+    assert.equal(JSON.stringify(await client.core.action('me')).includes('Encrypted profile biography'),false);
+    const sticker=(await request('POST','/guilds/'+guild.id+'/stickers',{name:'private_sticker',image,description:'Private sticker',tags:['wave']})).body;
+    assert.ok(sticker.id);assert.equal((await request('GET','/guilds/'+guild.id+'/stickers')).body.length,1);
+    const stickerMessage=(await request('POST','/channels/'+channel+'/messages',{content:'',sticker_ids:[sticker.id],nonce:'sticker'})).body;
+    assert.equal(stickerMessage.sticker_items[0].name,'private_sticker');assert.equal(stickerMessage.attachments.length,0);
+    await request('PATCH','/guilds/'+guild.id+'/stickers/'+sticker.id,{description:'Updated description',tags:['hello']});
+    assert.equal((await request('GET','/guilds/'+guild.id+'/stickers')).body[0].description,'Updated description');
+    await request('DELETE','/guilds/'+guild.id+'/stickers/'+sticker.id);
+    assert.equal((await request('GET','/guilds/'+guild.id+'/stickers')).body.length,0);
+    const ownerClient=await new VortexSession(owner).open();cleanup.push(()=>ownerClient.close());
+    const {nodeExpressionRequest}=await import('./NodeExpressions.js');
+    const ownerRequest=async(method,path,body)=>({body:await nodeExpressionRequest(ownerClient,method,path.split('/')[3],body)});
+    await assert.rejects(request('POST','/vortex/expressions',{kind:'emoji',name:'not_admin',image}));
+    await ownerRequest('POST','/vortex/expressions',{kind:'emoji',name:'node_wave',image});
+    await ownerRequest('POST','/vortex/expressions',{kind:'sticker',name:'node_sticker',image});
+    const catalog=(await request('GET','/vortex/expressions')).body;
+    assert.equal(catalog.emojis.length,1);assert.equal(catalog.stickers.length,1);
+    assert.equal(JSON.stringify(await client.core.action('emoji.list')).includes('node_wave'),false);
+    const nodeSent=(await request('POST','/channels/'+channel+'/messages',{content:`<:node_wave:${catalog.emojis[0].id}>`,sticker_ids:[catalog.stickers[0].id],nonce:'node-expressions'})).body;
+    assert.match(nodeSent.content,/node_wave/u);assert.equal(nodeSent.sticker_items[0].name,'node_sticker');
+    for(const expression of [...catalog.emojis,...catalog.stickers])await ownerRequest('DELETE','/vortex/expressions/'+expression.id);
+    assert.equal((await request('GET','/vortex/expressions')).body.emojis.length,0);
     await request('PATCH','/guilds/'+guild.id+'/emojis/'+emoji.id,{name:'renamed_wave'});
     assert.equal((await request('GET','/guilds/'+guild.id+'/emojis')).body[0].name,'renamed_wave');
     await request('DELETE','/guilds/'+guild.id+'/emojis/'+emoji.id);
     assert.equal((await request('GET','/guilds/'+guild.id+'/emojis')).body.length,0);
     assert.match((await request('GET','/channels/'+channel+'/messages/'+sent.id)).body.content,/private_wave/u);
   } finally {globalThis.createImageBitmap=bitmap;}
-  const message=(await request('POST','/channels/'+channel+'/messages',{content:'Through Fluxer',nonce:'test-nonce'})).body;
+  const voiceForm=new FormData();
+  voiceForm.set('payload_json',JSON.stringify({flags:8192,nonce:'voice-message',attachments:[{duration:2.5,waveform:'AQID'}]}));
+  voiceForm.set('files[0]',new File([new Uint8Array([79,103,103,83])],'voice.ogg',{type:'audio/ogg'}));
+  const voiceMessage=(await vortexRequest(url,'POST','/channels/'+channel+'/messages',{body:voiceForm},token)).body;
+  assert.equal(voiceMessage.flags,8192);assert.equal(voiceMessage.attachments[0].content_type,'audio/ogg');assert.match(voiceMessage.attachments[0].proxy_url,/^blob:/u);assert.equal(voiceMessage.attachments[0].waveform,'AQID');assert.equal(voiceMessage.attachments[0].duration,2.5);
+  const message=(await request('POST','/channels/'+channel+'/messages' ,{content:'Through Fluxer',nonce:'test-nonce'})).body;
   assert.equal(message.content,'Through Fluxer');
   assert.equal((await request('POST','/channels/'+channel+'/messages',{content:'Through Fluxer',nonce:'test-nonce'})).body.id,message.id);
   await request('PATCH','/channels/'+channel+'/messages/'+message.id,{content:'Edited locally'});
@@ -205,11 +252,18 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   const bobClient=await getSession(bobLogin.body.token,url);cleanup.push(()=>bobClient.close());
   await client.refresh();
   const newSpace=client.ids.raw('guild',guild.id);
-  const invitation=await client.core.inviteSpace(newSpace,bobPair.id);
+  const invitation=(await request('POST','/vortex/space-invites',{guild_id:guild.id,username:'bob.testxx'})).body.id;
+  const bobRequest=(method,path,body)=>vortexRequest(url,method,path,{body},bobLogin.body.token);
+  const inviteLink=url+'/invite/'+invitation;
+  assert.equal(invitationCodes(inviteLink,url)[0].code,invitation);
+  assert.equal(invitationCodes(url+'/channels/@me',url).length,0);
+  assert.equal((await bobRequest('GET','/invites/'+invitation)).body.guild.name,'Encrypted UI Space');
   const invitationWire=await bobClient.core.action('space.invites');
   assert.equal(JSON.stringify(invitationWire).includes('Encrypted UI Space'),false);
   assert.equal((await bobClient.core.invitations())[0].name,'Encrypted UI Space');
-  await bobClient.core.respondInvitation(invitation,true);
+  const joinEvents=[];bobClient.listeners.add((type,data)=>joinEvents.push({type,data}));
+  await bobRequest('POST','/invites/'+invitation,{});
+  assert.ok(joinEvents.some(event=>event.type==='GUILD_CREATE'&&event.data.id===guild.id));
   await client.refresh();await bobClient.refresh();
   await gateway.refresh(true);
   assert.ok(packets.some(packet=>packet.t==='GUILD_MEMBER_ADD'&&packet.d.guild_id===guild.id&&packet.d.user.id===bobClient.currentUser().id));
@@ -225,7 +279,11 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   assert.ok(packets.some(packet=>packet.t==='GUILD_MEMBER_REMOVE'&&packet.d.guild_id===guild.id&&packet.d.user.id===bobClient.currentUser().id));
 
   // Closing a DM hides it for this account without deleting shared history.
-  const bobRequest=(method,path,body)=>vortexRequest(url,method,path,{body},bobLogin.body.token);
+  await bobRequest('PATCH','/users/@me/settings',{friend_source_flags:0,group_dm_add_permission_flags:16,incoming_call_flags:16});
+  await assert.rejects(request('POST','/users/@me/relationships',{username:'bob.testxx'}),/accepting friend/);
+  const ownerId=client.ids.get('user',owner.id);
+  await assert.rejects(request('POST','/users/@me/channels',{recipients:[bobClient.currentUser().id,ownerId]}),/group invitation/);
+  await bobRequest('PATCH','/users/@me/settings',{friend_source_flags:7,group_dm_add_permission_flags:4,incoming_call_flags:8});
   await request('POST','/users/@me/relationships',{username:'bob.testxx'});
   await bobRequest('PUT','/users/@me/relationships/'+me.id,{type:1});
   await client.refresh(true);
@@ -247,8 +305,35 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   await assert.rejects(request('POST','/channels/'+dm.id+'/messages',{content:'Must not send after the other person removes the friendship'}),/Become friends/);
   assert.equal((await request('GET','/channels/'+dm.id+'/messages')).body.some(message=>message.content==='Retained private conversation'),true);
 
+  const bitmapForProfile=globalThis.createImageBitmap;globalThis.createImageBitmap=async()=>({width:1,height:1,close(){}});
+  try {
+    await request('PATCH','/users/@me/settings',{profile_privacy:2});
+    await request('PATCH','/users/@me',{bio:'Friends only profile'});
+    await bobClient.refresh(true);
+    assert.equal((await bobRequest('GET','/users/'+me.id+'/profile')).body.user_profile.bio,'','A removed friend cannot decrypt a newly restricted profile');
+  } finally {globalThis.createImageBitmap=bitmapForProfile;}
   // Disabling an account also revokes its active authentication token.
   await auth.api(url,'admin.user',{user:bobPair.id,disabled:true,quota:1024},owner.token);
   await assert.rejects(bobClient.core.action('me'));
 
 });
+
+test('Password changes preserve account keys and revoke previous sessions', {timeout:120000}, async t=>{
+  const {url,password,cleanup}=await startNode(t);
+  // Password replacement rewraps the same root, revokes older sessions and rejects the old password.
+  await auth.register({url,username:'password.user',password});
+  const credentialLogin=await vortexRequest(url,'POST','/auth/login',{body:{login:'password.user',password}});
+  const credentialClient=await getSession(credentialLogin.body.token,url);cleanup.push(()=>credentialClient.close());
+  const credentialRoot=createHash('sha256').update(JSON.stringify(credentialClient.core.state.root)).digest('hex');
+  const previous=await auth.login({url,username:'password.user',password});
+  const newPassword='replacement-password-private-2026';
+  await vortexRequest(url,'POST','/vortex/account/password',{body:{password,new_password:newPassword}},credentialLogin.body.token);
+  assert.equal((await credentialClient.core.action('me')).username,'password.user');
+  await assert.rejects(auth.api(url,'me',{},previous.token));
+  await assert.rejects(auth.login({url,username:'password.user',password}));
+  const changed=await auth.login({url,username:'password.user',password:newPassword});
+  assert.equal(createHash('sha256').update(JSON.stringify(await auth.restoreRoot(changed))).digest('hex'),credentialRoot);
+  const publicPart=publicCredential({id:'public',rawId:new Uint8Array([1]).buffer,type:'public-key',response:{clientDataJSON:new Uint8Array([2]).buffer},getClientExtensionResults:()=>({prf:{results:{first:'PRIVATE'}}})});
+  assert.equal(JSON.stringify(publicPart).includes('PRIVATE'),false);assert.deepEqual(publicPart.extensions,{});
+
+ });

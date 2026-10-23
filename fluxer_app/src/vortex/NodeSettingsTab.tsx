@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import {NodeExpressionsPanel} from './NodeExpressionsPanel';
 import { useEffect, useState, type ReactNode } from 'react';
 import { http } from '@app/features/platform/transport/RestTransport';
 import RuntimeConfig from '@app/features/app/state/RuntimeConfig';
 import { Button } from '@app/features/ui/button/Button';
-import {
-	SettingsTabContainer,
-	SettingsTabContent,
-} from '@app/features/app/components/dialogs/shared/SettingsTabLayout';
+import {SettingsTabContainer, SettingsTabContent} from '@app/features/app/components/dialogs/shared/SettingsTabLayout';
 import { DatabaseIcon, GlobeIcon, HardDrivesIcon, ShieldCheckIcon, UsersIcon } from '@phosphor-icons/react';
 import styles from './NodeSettingsTab.module.css';
 
@@ -39,13 +37,14 @@ type Storage = {
 	protocolMaxUpload: number;
 };
 type Invitation = { id: string; name: string; sender: string; channels: number };
-type Section = 'overview' | 'storage' | 'access' | 'accounts';
+type Section = 'overview' | 'storage' | 'access' | 'accounts' | 'expressions';
 const GiB = 1024 ** 3;
 const sections = [
 	{ id: 'overview', label: 'Overview', icon: GlobeIcon },
 	{ id: 'storage', label: 'Storage', icon: HardDrivesIcon },
 	{ id: 'access', label: 'Access & invitations', icon: ShieldCheckIcon },
 	{ id: 'accounts', label: 'Accounts', icon: UsersIcon },
+	{id: 'expressions', label: 'Emoji & stickers', icon: GlobeIcon},
 ] as const;
 function bytes(value: number) {
 	if (!Number.isFinite(value)) return 'Unavailable';
@@ -212,6 +211,7 @@ export default function NodeSettingsTab() {
 							)}
 						</div>
 					)}
+					{section === 'expressions' && node?.owner && <NodeExpressionsPanel manage />}
 					{section === 'overview' && node && (
 						<>
 							<div className={styles.stats}>

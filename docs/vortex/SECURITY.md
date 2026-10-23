@@ -8,6 +8,14 @@ The initial integration preserves Node’s existing OpenMLS, archive encryption 
 
 Native desktop wrapping keys are derived from a key protected by the OS keyring. Plaintext fallback keyring modes are refused. Browser wrapping keys use non-extractable Web Crypto keys in device storage. Browser storage does not provide the same protection as a hardware-backed native key store.
 
+## Account security
+
+Password changes require a separate, recent authenticated session, issue a new OPAQUE registration, and re-encrypt the unchanged account root on the client. The server receives the registration record and ciphertext, never the new password or root keys. Other login sessions are revoked after the change.
+
+Passkeys use WebAuthn with the Node's exact configured origin and relying-party ID, user verification and expiring single-use challenges. A supported authenticator's PRF output derives the client wrapping key for the account root. PRF output is removed from the public credential before transmission. The server stores a public credential, salt and encrypted root bundle. A passkey without PRF support cannot unlock Chat and is not enrolled by this UI. Management and sign-in ceremonies run on the Node website; the installed client links there for management.
+
+Profiles use signed recipient-encrypted envelopes. Profile privacy changes rotate the profile secret and publish a new envelope to the selected audience. Recipients may retain versions they previously decrypted. Communication policies are enforced from relationship metadata without inspecting message content.
+
 ## Who can read what
 
 Participants decrypt messages, attachment contents and media locally. A Node operator who is not a participant is not automatically given conversation keys. Vault uses its own existing encrypted data storage; Chat does not reuse a Vault bucket or expose a Vault decryption key.

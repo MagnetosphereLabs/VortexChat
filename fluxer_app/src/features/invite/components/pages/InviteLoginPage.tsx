@@ -101,6 +101,8 @@ const InviteLoginPageContent = observer(function InviteLoginPageContent({
 	if (!invite)
 		return (
 			<InviteAuthPageState
+				code={code}
+				endpoint={runtimeSnapshot.apiEndpoint}
 				loading={loading}
 				prefix="invite.invite-login-page.invite-login-page-container"
 				data-flx="invite.invite-login-page.invite-login-page-content.invite-auth-page-state"

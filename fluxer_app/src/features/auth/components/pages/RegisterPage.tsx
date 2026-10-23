@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {NodeConnectionNotice} from '@app/vortex/NodeConnectionNotice';
 import { readRegistrationUrlCode } from '@app/features/auth/flow/RegisterFormFields';
 import type { RuntimeConfigSnapshot } from '@app/features/app/state/InstanceSnapshotStore';
 import { usesUsernameSignIn } from '@app/features/app/utils/AccountIdentityFeatures';
@@ -127,7 +128,7 @@ const RegisterPageContent = observer(function RegisterPageContent({ runtimeSnaps
 					<Trans>Create a Vortex Chat account</Trans>
 				</h1>
 				<div className={sharedStyles.container} data-flx="auth.register-page.register-page-content.div">
-					<p>Connected to {new URL(runtimeSnapshot.apiEndpoint).host}</p>
+					<NodeConnectionNotice endpoint={runtimeSnapshot.apiEndpoint} register />
 					<AuthRegisterFormCore
 						fields={credentialRegisterFields(usernameSignIn)}
 						submitLabel={<Trans>Create account</Trans>}

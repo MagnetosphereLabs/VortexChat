@@ -24,8 +24,8 @@
 	width: 3.5rem;
 	height: 3.5rem;
 	border-radius: 1rem;
-	background: color-mix(in srgb, var(--brand-primary) 16%, transparent);
-	color: var(--brand-primary);
+	background: var(--background-tertiary);
+	color: var(--text-primary);
 }
 .heroText {
 	flex: 1;
@@ -280,6 +280,8 @@
 }
 .invitation > div {
 	flex: 1;
+	min-width: 0;
+	overflow-wrap: anywhere;
 }
 .empty {
 	color: var(--text-secondary);

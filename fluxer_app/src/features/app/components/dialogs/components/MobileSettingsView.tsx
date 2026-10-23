@@ -572,6 +572,10 @@ const MobileContentWithScrollSpy: React.FC<MobileContentWithScrollSpyProps> = ob
 		pendingSection,
 		onPendingSectionConsumed,
 	}) => {
+		const contentScrollerRef = useRef<ScrollerHandle | null>(null);
+		useEffect(() => {
+			contentScrollerRef.current?.getViewportElement()?.scrollTo({top: 0, left: 0, behavior: 'instant'});
+		}, [scrollKey]);
 		useEffect(() => {
 			if (!pendingSection) return;
 			const frame = window.requestAnimationFrame(() => {
@@ -585,6 +589,7 @@ const MobileContentWithScrollSpy: React.FC<MobileContentWithScrollSpyProps> = ob
 		}, [pendingSection, onPendingSectionConsumed]);
 		return (
 			<Scroller
+				ref={contentScrollerRef}
 				className={styles.scrollerFlex}
 				key={scrollKey}
 				data-settings-scroll-container

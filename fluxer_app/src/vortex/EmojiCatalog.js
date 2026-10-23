@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { auth } from './vendor/auth.js';
 
-export async function emojiCatalogRequest(session, spaceId, method, suffix, body) {
+export async function emojiCatalogRequest(session, spaceId, method, suffix, body, kind = 'emoji') {
 	const { state } = session.core;
+	const sticker=kind==='sticker', collection=()=>sticker?state.vortexStickers:state.vortexEmojis;
 	const space = state.spaces.find((item) => item.id === spaceId);
 	if (!space) throw new Error('Server unavailable');
 	const list = () =>
-		(state.vortexEmojis || [])
+		(collection() || [])
 			.filter((item) => item.space === spaceId && item.catalog === true)
 			.map(({ file, space, catalog, ...item }) => item);
 	if (method === 'GET' && !suffix) return { body: list(), status: 200 };
@@ -20,8 +21,8 @@ export async function emojiCatalogRequest(session, spaceId, method, suffix, body
 		return value;
 	};
 	const publish = async (entry) => {
-		await session.core.send({ type: 'emoji', name: entry.name, file: entry.file }, 'emoji', room);
-		const value = await session.emoji({ ...entry, catalog: true }, spaceId);
+		await session.core.send({ type: kind, name: entry.name, description:entry.description||'',tags:entry.tags||[],file: entry.file }, 'emoji', room);
+		const value = await session[sticker?'sticker':'emoji']({ ...entry, catalog: true }, spaceId);
 		if (!value) throw new Error('The emoji image could not be decoded');
 		const { file, space, catalog, ...view } = value;
 		return view;
@@ -40,7 +41,7 @@ export async function emojiCatalogRequest(session, spaceId, method, suffix, body
 			bitmap = await createImageBitmap(blob);
 		bitmap.close();
 		const file = { ...(await session.core.upload(new File([blob], label, { type: match[1] }), room)), room: room.id };
-		return publish({ name: label, file, creator: state.me.id });
+		return publish({ name: label, file, creator: state.me.id,description:String(item.description||'').slice(0,100),tags:Array.isArray(item.tags)?item.tags.slice(0,5):[] });
 	};
 	let result,
 		status = 200;
@@ -55,7 +56,8 @@ export async function emojiCatalogRequest(session, spaceId, method, suffix, body
 			}
 	} else if (method === 'POST' && !suffix) result = await upload(body);
 	else if (method === 'POST' && suffix === '/clone') {
-		const entry = (state.vortexEmojis || []).find((item) => item.id === body.source_emoji_id);
+		if(list().length>=1024)throw new Error('This server has reached its expression limit');
+		const entry = (collection() || []).find((item) => item.id === (sticker?body.source_sticker_id:body.source_emoji_id));
 		if (!entry) throw new Error('Source emoji unavailable');
 		const blob = await session.core.download(entry.file);
 		const file = {
@@ -64,17 +66,17 @@ export async function emojiCatalogRequest(session, spaceId, method, suffix, body
 		};
 		result = await publish({ name: name(entry.name), file, creator: state.me.id });
 	} else {
-		const entry = (state.vortexEmojis || []).find((item) => '/' + item.id === suffix && item.space === spaceId);
+		const entry = (collection() || []).find((item) => '/' + item.id === suffix && item.space === spaceId);
 		if (!entry) throw new Error('Emoji unavailable');
-		if (method === 'PATCH') result = await publish({ ...entry, name: name(body.name) });
+		if (method === 'PATCH') result = await publish({ ...entry, name: body.name===undefined?entry.name:name(body.name), description:body.description===undefined?entry.description:String(body.description||'').slice(0,100),tags:body.tags===undefined?entry.tags:(Array.isArray(body.tags)?body.tags.slice(0,5):[]) });
 		else if (method === 'DELETE') {
-			await session.core.send({ type: 'emoji.remove', fileId: entry.file.id }, 'emoji', room);
+			await session.core.send({ type: kind+'.remove', fileId: entry.file.id }, 'emoji', room);
 			state.prefs.emoji = (state.prefs.emoji || []).filter((item) => item.file?.id !== entry.file.id);
 			await session.core.savePreferences();
 			status = 204;
 		} else throw new Error('Unsupported emoji operation');
 	}
 	await session.refresh(true);
-	session.emit('GUILD_EMOJIS_UPDATE', { guild_id: session.ids.get('guild', spaceId), emojis: list() });
+	session.emit(sticker?'GUILD_STICKERS_UPDATE':'GUILD_EMOJIS_UPDATE', { guild_id: session.ids.get('guild', spaceId), [sticker?'stickers':'emojis']: list() });
 	return { body: result, status };
 }

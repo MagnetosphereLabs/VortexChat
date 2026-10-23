@@ -13,6 +13,13 @@ test('call events cannot impersonate another participant or ring after their lea
   assert.equal(call.voice_states[0].user_id,ids.get('user','alice'));
   assert.equal(call.voice_states[0].channel_id,ids.get('channel',room.id));
   assert.deepEqual(call.ringing,[ids.get('user','bob')]);
+  state.me={id:'bob',privacy:{incoming_call_flags:16}};
+  assert.deepEqual(callView(ids,state,room,1001).ringing,[]);
+  state.me.privacy.incoming_call_flags=4;
+  state.messages.get(room.id).push({...event('alice',{state:'ring',recipients:['bob']}),ringAllowed:false});
+  assert.deepEqual(callView(ids,state,room,1001).ringing,[]);
+  state.messages.get(room.id).push({...event('alice',{state:'ring',recipients:['bob']}),ringAllowed:true});
+  assert.deepEqual(callView(ids,state,room,1001).ringing,[ids.get('user','bob')]);
   state.messages.get(room.id).push(event('outsider',{state:'joined',voice:{connection_id:'unauthorized'}}));
   assert.equal(callView(ids,state,room,1001).voice_states.length,1);
   state.messages.get(room.id).push(event('bob',{state:'stop-ringing',recipients:['bob']}));

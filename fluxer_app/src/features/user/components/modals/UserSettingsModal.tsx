@@ -64,7 +64,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = observer(
 			},
 			[visibleSettingsTabs],
 		);
-		const [selectedTab, setSelectedTab] = useState<UserSettingsTabType>(() => resolveVisibleTab(normalizedInitialTab));
+		const [selectedTab, setSelectedTab] = useState<UserSettingsTabType>(() =>
+			resolveVisibleTab(normalizedInitialTab ?? 'my_profile'),
+		);
 		const [pendingSection, setPendingSection] = useState<string | null>(null);
 		const consumePendingSection = useCallback(() => setPendingSection(null), []);
 		const mobileInitialTab = useMemo(() => {
@@ -124,6 +126,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = observer(
 				PlutoniumPageCommands.openPlutoniumPage();
 				return;
 			}
+			setPendingSection(null);
 			setSelectedTab(tabType);
 		}, []);
 		const handleClose = useCallback(() => {

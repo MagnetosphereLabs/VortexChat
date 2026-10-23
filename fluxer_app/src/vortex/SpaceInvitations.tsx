@@ -28,15 +28,8 @@ export function SpaceInvitationModal({ guildId, name }: { guildId: string; name:
 	const [username, setUsername] = useState(''),
 		[status, setStatus] = useState(''),
 		[busy, setBusy] = useState(false);
-	return (
-		<Modal.Root size="small" centered>
-			<Modal.Header title={'Invite to ' + name} />
-			<Modal.Content>
-				<form
-					id="vortex-space-invite"
-					className={styles.form}
-					onSubmit={async (event) => {
-						event.preventDefault();
+	async function sendInvitation() {
+		if (busy || !username.trim()) return;
 						setBusy(true);
 						setStatus('');
 						try {
@@ -46,10 +39,7 @@ export function SpaceInvitationModal({ guildId, name }: { guildId: string; name:
 								})
 							).body;
 							setInviteLink(
-								new URL(
-									'/channels/@me?server_invite=' + encodeURIComponent(invitation.id),
-									new URL(RuntimeConfig.apiEndpoint).origin,
-								).href,
+				new URL('/invite/' + encodeURIComponent(invitation.id), new URL(RuntimeConfig.apiEndpoint).origin).href,
 							);
 							setStatus('Invitation sent. They can accept it in their server invitations on the Friends page.');
 							setUsername('');
@@ -58,6 +48,17 @@ export function SpaceInvitationModal({ guildId, name }: { guildId: string; name:
 						} finally {
 							setBusy(false);
 						}
+	}
+	return (
+		<Modal.Root size="small" centered>
+			<Modal.Header title={'Invite to ' + name} />
+			<Modal.Content>
+				<form
+					id="vortex-space-invite"
+					className={styles.form}
+					onSubmit={(event) => {
+						event.preventDefault();
+						void sendInvitation();
 					}}
 				>
 					<p>
@@ -110,7 +111,7 @@ export function SpaceInvitationModal({ guildId, name }: { guildId: string; name:
 				<Button variant="secondary" onClick={ModalCommands.pop}>
 					Close
 				</Button>
-				<Button type="submit" form="vortex-space-invite" submitting={busy} disabled={!username.trim()}>
+				<Button onClick={() => void sendInvitation()} submitting={busy} disabled={busy || !username.trim()}>
 					Send invitation
 				</Button>
 			</Modal.Footer>
@@ -129,9 +130,14 @@ export function SpaceInvitations({ showEmpty = false }: { showEmpty?: boolean } 
 			void http
 				.get<Array<Invitation>>('/vortex/space-invites')
 				.then((response) => {
-					if (active) setItems(response.body);
+					if (active) {
+						setItems(response.body);
+						setError('');
+					}
 				})
-				.catch(() => {});
+				.catch((cause) => {
+					if (active) setError(cause instanceof Error ? cause.message : 'Could not load server invitations');
+				});
 		};
 		refresh();
 		const interval = setInterval(refresh, 10000);
@@ -140,7 +146,7 @@ export function SpaceInvitations({ showEmpty = false }: { showEmpty?: boolean } 
 			clearInterval(interval);
 		};
 	}, [enabled]);
-	if (!items.length && !showEmpty) return null;
+	if (!items.length && !showEmpty && !error) return null;
 	async function respond(id: string, accept: boolean) {
 		setBusy(true);
 		setError('');

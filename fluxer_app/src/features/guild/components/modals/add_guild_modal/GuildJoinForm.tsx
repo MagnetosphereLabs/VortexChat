@@ -94,7 +94,7 @@ const StandardGuildJoinForm = observer(() => {
 						error={form.formState.errors.code?.message}
 						label={i18n._(INVITE_LINK_DESCRIPTOR)}
 						minLength={1}
-						maxLength={100}
+						maxLength={2048}
 						name="code"
 						placeholder={`${RuntimeConfig.inviteEndpoint}/${randomInviteCode}`}
 						required={true}
@@ -107,5 +107,12 @@ const StandardGuildJoinForm = observer(() => {
 });
 
 export const GuildJoinForm = observer(() =>
-	vortexOrigin(RuntimeConfig.apiEndpoint) ? <SpaceInvitations showEmpty /> : <StandardGuildJoinForm />,
+	vortexOrigin(RuntimeConfig.apiEndpoint) ? (
+		<>
+			<StandardGuildJoinForm />
+			<SpaceInvitations showEmpty />
+		</>
+	) : (
+		<StandardGuildJoinForm />
+	),
 );

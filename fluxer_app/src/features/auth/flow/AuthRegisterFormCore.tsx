@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {vortexOrigin} from '@app/vortex/Rest.js';
 import Accessibility from '@app/features/accessibility/state/Accessibility';
 import type {RuntimeConfigSnapshot} from '@app/features/app/state/InstanceSnapshotStore';
 import {usesUniqueUsernames} from '@app/features/app/utils/AccountIdentityFeatures';
@@ -213,6 +214,16 @@ export const AuthRegisterFormCore = observer(function AuthRegisterFormCore({
 		[persistDraft],
 	);
 	const handleRegisterSubmit = async (values: Record<string, string>) => {
+		if (vortexOrigin(runtimeSnapshot.apiEndpoint)) {
+			if ((values.username || '').trim().length < 8) {
+				form.setError('username', 'Use a username containing at least 8 characters');
+				return false;
+			}
+			if ([...(values.password || '')].length < 15 || [...(values.password || '')].length > 128) {
+				form.setError('password', 'Use a password containing 15–128 characters');
+				return false;
+			}
+		}
 		if (showPasswordConfirmation && showPassword && values.password !== values.confirm_password) {
 			form.setError('confirm_password', i18n._(PASSWORDS_DO_NOT_MATCH_DESCRIPTOR));
 			return false;

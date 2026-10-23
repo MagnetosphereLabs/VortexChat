@@ -3,18 +3,23 @@ import {auth} from './vendor/auth.js';
 import {createVortexCore} from './Core.js';
 import {registerAttachment,registerAttachmentAlias,unregisterAttachments} from './AttachmentDownloads.js';
 import {VortexIds,channelView,guildView,userView,materializeMessages} from './Projection.js';
+import {passkeyPair} from './AccountSecurity.js';
+import {hydrateNodeExpressions} from './NodeExpressions.js';
+import {hydrateProfiles,profileAudience,publishProfile} from './Profiles.js';
 import {userSettingsView} from './UserSettingsView.js';
 import {setEmojiMedia,clearEmojiMedia,emojiName,messageEmojiFiles,messageEmojiEntries,validEmojiFile} from './EmojiMedia.js';
 
 export class VortexSession {
-  catalogs=new Map();ids=new VortexIds();listeners=new Set();attachmentUrls=new Map();attachmentReferences=new Map();previewBytes=0;voice=null;
+  nodeExpressions=new Map();profiles=new Map();profileUrls=new Set();catalogs=new Map();ids=new VortexIds();listeners=new Set();attachmentUrls=new Map();attachmentReferences=new Map();previewBytes=0;voice=null;
   constructor(pair) {
     this.pair=pair;
     this.core=createVortexCore({notice:message=>this.emit('VORTEX_NOTICE',{message}),mediaEpochChanged:()=>this.updateMediaEpoch()});
   }
   async open() {await this.core.connect(this.pair,await auth.restoreRoot(this.pair));await this.refresh();return this;}
   emit(type,data){for(const listener of this.listeners)listener(type,data);}
-  async refresh(fresh=false) {await this.core.sync(fresh);await this.ids.index(this.core.state);await this.hydrateEmojis();}
+  async refresh(fresh=false) {await this.core.sync(fresh);await this.ids.index(this.core.state);await hydrateProfiles(this);await Promise.all([this.hydrateEmojis(),hydrateNodeExpressions(this)]);this.refreshedAt=Date.now();
+    if(this.core.state.prefs.profile&&JSON.stringify(profileAudience(this.core.state))!==JSON.stringify(this.core.state.prefs.profileAudience))await publishProfile(this,{},false);
+  }
   currentUser(){const s=this.core.state;return userView(this.ids,s.users.find(u=>u.id===s.me.id)||s.me,s.me);}
   visibleRoom(room) {
     const closed=this.core.state.prefs.closedDms?.[room.id];
@@ -49,6 +54,13 @@ export class VortexSession {
     if(known<0&&!this.core.state.vortexEmojiRemoved?.has(file.id))this.core.state.vortexEmojis.push(emoji);else if(known>=0) this.core.state.vortexEmojis[known]=emoji;
     return emoji;
   }
+  async sticker(entry,space='') {
+    if(!validEmojiFile(entry?.file))return null;
+    const image=await this.attachment(entry.file);if(!image.proxy_url.startsWith('blob:'))return null;
+    const id=await this.ids.add('sticker',entry.file.id);
+    setEmojiMedia(this,'sticker:'+id,image.proxy_url);
+    return {id,name:emojiName(entry.name),description:String(entry.description||'').slice(0,100),tags:Array.isArray(entry.tags)?entry.tags.filter(tag=>typeof tag==='string').slice(0,5):[],animated:entry.file.type==='image/gif',space,file:entry.file,catalog:entry.catalog===true};
+  }
   async hydrateEmojis() {
     const state=this.core.state,entries=new Map();
     for(const entry of (Array.isArray(state.prefs.emoji)?state.prefs.emoji:[]))if(entry.file?.id)entries.set(entry.file.id,{...entry,catalog:true});
@@ -78,29 +90,31 @@ export class VortexSession {
     const events=[...archived,...state.rooms.flatMap(room=>(state.messages.get(room.id)||[]).map(event=>({room,event})))].sort((a,b)=>a.event.seq-b.event.seq);
     for(const {room,event} of events) {
       const p=event.payload;
-      if(event.kind==='emoji'&&p?.type==='emoji.remove')removed.add(p.fileId);
-      if(event.kind==='emoji'&&p?.type==='emoji'&&p.file?.id){removed.delete(p.file.id);entries.set(p.file.id,{catalog:true,name:p.name,file:{...p.file,room:p.file.room||room.id},space:room.space,creator:event.sender});}
+      if(event.kind==='emoji'&&['emoji.remove','sticker.remove'].includes(p?.type))removed.add(p.fileId);
+      if(event.kind==='emoji'&&['emoji','sticker'].includes(p?.type)&&p.file?.id){removed.delete(p.file.id);entries.set(p.file.id,{catalog:true,kind:p.type,name:p.name,description:p.description,tags:p.tags,file:{...p.file,room:p.file.room||room.id},space:room.space,creator:event.sender});}
       for(const entry of [p?.emoji,...messageEmojiEntries(p),...(p?.emojiFile?[{name:p.emojiName,file:p.emojiFile}]:[])])if(entry?.file?.id&&!entries.has(entry.file.id))entries.set(entry.file.id,{...entry,file:{...entry.file,room:entry.file.room||room.id},space:room.space,creator:event.sender});
     }
     state.vortexEmojiRemoved=removed;
-    state.vortexEmojis=[];
+    state.vortexEmojis=[];state.vortexStickers=[];
     // Bound work and image memory for large legacy catalogs.
     for(const entry of [...entries.values()].filter(entry=>!removed.has(entry.file.id)).slice(0,1024)) {
-      try {await this.emoji(entry,entry.space);}catch{}
+      try {if(entry.kind==='sticker'){const sticker=await this.sticker(entry,entry.space);if(sticker)state.vortexStickers.push(sticker);}else await this.emoji(entry,entry.space);}catch{}
     }
   }
   async attachment(file) {
     let reference=this.attachmentReferences.get(file.id);
     if(!reference){reference=registerAttachment(this,file);this.attachmentReferences.set(file.id,reference);}
     let pending=this.attachmentUrls.get(file.id);
-    const previewable=/^image\/(png|jpeg|webp|gif|avif)$/u.test(file.type)&&file.size<=8*1024**2;
+    const imageType=/^image\/(png|jpeg|webp|gif|avif)$/u.test(file.type);
+    const audioType=/^audio\/(mpeg|mp3|mp4|aac|ogg|webm|wav|x-wav|flac)(?:;[^\r\n]*)?$/u.test(file.type);
+    const previewable=(imageType&&file.size<=8*1024**2)||(audioType&&file.size<=24*1024**2);
     if(!pending&&previewable&&this.previewBytes+file.size<=32*1024**2) {
       this.previewBytes+=file.size;
       pending=this.core.download(file).then(async blob=>{
         const url=URL.createObjectURL(blob);
         try {
-          const bitmap=await createImageBitmap(blob);
-          const dimensions={width:bitmap.width,height:bitmap.height};bitmap.close();
+          let dimensions={width:null,height:null};
+          if(imageType){const bitmap=await createImageBitmap(blob);dimensions={width:bitmap.width,height:bitmap.height};bitmap.close();}
           registerAttachmentAlias(url,reference);return {url,...dimensions};
         }catch(error){URL.revokeObjectURL(url);throw error;}
       });
@@ -109,7 +123,7 @@ export class VortexSession {
     }
     const preview=pending?await pending.catch(()=>null):null;
     return {id:await this.ids.add('attachment',file.id),filename:file.name,size:file.size,content_type:preview?file.type:'application/octet-stream',url:reference,proxy_url:preview?.url||reference,
-      width:preview?.width||file.width||null,height:preview?.height||file.height||null,flags:0};
+      width:preview?.width||file.width||null,height:preview?.height||file.height||null,duration:file.duration??file.duration_secs,waveform:file.waveform,flags:0};
   }
   async message(room,event,attachments=true,includeReply=true) {
     const state=this.core.state;
@@ -118,9 +132,10 @@ export class VortexSession {
       author:userView(this.ids,state.users.find(u=>u.id===event.sender)||state.formerUsers?.find(u=>u.id===event.sender)||{id:event.sender,username:'deleted-user'}),
       content:payload.text||'',timestamp:new Date(event.at*1000).toISOString(),edited_timestamp:event.editedAt?new Date(event.editedAt*1000).toISOString():null,
       type:payload.reply?19:0,tts:false,mention_everyone:false,mentions:[],mention_roles:[],attachments:attachments?await Promise.all(messageEmojiFiles(payload).map(file=>this.attachment(file))):[],
-      embeds:[],sticker_items:[],flags:0,pinned:!!event.pinned,nonce:payload.nonce,
+      embeds:[],sticker_items:[],flags:payload.flags||0,pinned:!!event.pinned,nonce:payload.nonce,
       reactions:[...event.reactions||[]].filter(([,people])=>people.size).map(([name,people])=>({count:people.size,me:people.has(state.me.id),emoji:{id:null,name,animated:false}}))};
     for(const entry of messageEmojiEntries(payload))await this.emoji(entry,room.space).catch(()=>null);
+    for(const entry of Array.isArray(payload.stickerMedia)?payload.stickerMedia.slice(0,3):[]){const sticker=await this.sticker(entry,room.space).catch(()=>null);if(sticker)result.sticker_items.push({id:sticker.id,name:sticker.name,animated:sticker.animated,format_type:sticker.animated?2:1});}
     if(payload.emoji) {
       const emoji=await this.emoji(payload.emoji,room.space).catch(()=>null);
       const label=emoji?`<${emoji.animated?'a':''}:${emoji.name}:${emoji.id}>`:`:${emojiName(payload.emoji.name)}:`;
@@ -128,11 +143,15 @@ export class VortexSession {
       // Inline emoji uses the same decrypted attachment preview; avoid a second full-size image.
       if(emoji)result.attachments=result.attachments.filter(file=>file.id!==this.ids.get('attachment',payload.emoji.file.id));
     }
-    result.reactions=await Promise.all([...event.reactions||[]].filter(([,people])=>people.size).map(async([key,people])=>{
-      const entry=event.reactionMedia?.get(key);
-      const emoji=entry?await this.emoji(entry,room.space).catch(()=>null):null;
-      return {count:people.size,me:people.has(state.me.id),emoji:emoji?{id:emoji.id,name:emoji.name,animated:emoji.animated}:{id:null,name:entry?`:${emojiName(entry.name)}:`:key,animated:false}};
-    }));
+    const reactions=new Map();
+    for(const [key,people]of event.reactions||[]) {
+      if(!people.size)continue;
+      const entry=event.reactionMedia?.get(key),emoji=entry?await this.emoji(entry,room.space).catch(()=>null):null;
+      const view=emoji?{id:emoji.id,name:emoji.name,animated:emoji.animated}:{id:null,name:entry?`:${emojiName(entry.name)}:`:key,animated:false};
+      const normalized=view.id||view.name,group=reactions.get(normalized)||{emoji:view,people:new Set()};
+      for(const person of people)group.people.add(person);reactions.set(normalized,group);
+    }
+    result.reactions=[...reactions.values()].map(({emoji,people})=>({emoji,count:people.size,me:people.has(state.me.id)}));
     const mentioned=new Set([...result.content.matchAll(/<@!?(\d+)>/gu)].map(match=>match[1]));
     result.mentions=room.meta.members.map(id=>state.users.find(user=>user.id===id)||state.formerUsers?.find(user=>user.id===id)).filter(Boolean).map(user=>userView(this.ids,user)).filter(user=>mentioned.has(user.id));
     if(payload.reply) {
@@ -160,7 +179,7 @@ export class VortexSession {
     const key=auth.b64(await this.core.mediaKey(room));
     if(key!==this.voice.key){this.voice.key=key;this.emit('VORTEX_MEDIA_KEY',{key});}
   }
-  close(){this.catalogs.clear();clearEmojiMedia(this);unregisterAttachments(this);this.core.close();for(const pending of this.attachmentUrls.values())pending.then(value=>URL.revokeObjectURL(value.url),()=>{});this.attachmentUrls.clear();this.attachmentReferences.clear();this.listeners.clear();}
+  close(){for(const entry of this.nodeExpressions.values())URL.revokeObjectURL(entry.url);this.nodeExpressions.clear();for(const url of this.profileUrls)URL.revokeObjectURL(url);this.profileUrls.clear();this.profiles.clear();this.catalogs.clear();clearEmojiMedia(this);unregisterAttachments(this);this.core.close();for(const pending of this.attachmentUrls.values())pending.then(value=>URL.revokeObjectURL(value.url),()=>{});this.attachmentUrls.clear();this.attachmentReferences.clear();this.listeners.clear();}
 }
 
 const sessions=new Map();
@@ -190,6 +209,11 @@ export async function getSession(token,origin) {
 export async function login(origin,body) {
   const pair=await auth.login({url:origin,username:body.login||body.username||body.email,password:body.password,otp:body.code||'',months:12});
   await savePair(pair);
+  const session=await getSession(pair.token,origin);
+  return {token:pair.token,user_id:session.currentUser().id,user:session.currentUser()};
+}
+export async function loginPasskey(origin,body) {
+  const pair=await passkeyPair(origin,body.username);await savePair(pair);
   const session=await getSession(pair.token,origin);
   return {token:pair.token,user_id:session.currentUser().id,user:session.currentUser()};
 }

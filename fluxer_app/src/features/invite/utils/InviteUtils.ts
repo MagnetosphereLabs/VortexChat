@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {vortexOrigin} from '@app/vortex/Rest.js';
+import {invitationCodes} from '@app/vortex/Invitations.js';
 import RuntimeConfig from '@app/features/app/state/RuntimeConfig';
 import type {Channel} from '@app/features/channel/models/Channel';
 import Channels from '@app/features/channel/state/Channels';
@@ -42,14 +44,25 @@ function getChannelsInChannelListGroupOrder(channels: ReadonlyArray<Channel>): A
 }
 
 export function findInvites(content: string | null): Array<string> {
-	return CodeLinkUtils.findCodes(content, INVITE_CONFIG);
+	const origin = vortexOrigin(RuntimeConfig.apiEndpoint);
+	return origin
+		? invitationCodes(content, origin).map((item: {code: string}) => item.code)
+		: CodeLinkUtils.findCodes(content, INVITE_CONFIG);
 }
 
 export function findInvite(content: string | null): string | null {
-	return CodeLinkUtils.findCode(content, INVITE_CONFIG);
+	return findInvites(content)[0] ?? null;
 }
 
 export function findSpoileredInvites(content: string | null): Array<CodeLinkUtils.CodeLinkMatch> {
+	const origin = vortexOrigin(RuntimeConfig.apiEndpoint);
+	if (origin && content) {
+		const matches: Array<CodeLinkUtils.CodeLinkMatch> = [];
+		for (const spoiler of content.matchAll(/\|\|([\s\S]*?)\|\|/gu))
+			for (const match of invitationCodes(spoiler[1], origin))
+				matches.push({...match, index: (spoiler.index ?? 0) + 2 + match.index});
+		return matches;
+	}
 	return CodeLinkUtils.findSpoileredCodeMatches(content, INVITE_CONFIG);
 }
 

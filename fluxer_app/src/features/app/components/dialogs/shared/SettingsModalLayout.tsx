@@ -123,6 +123,9 @@ export const SettingsModalDesktopScroll: React.FC<SettingsModalDesktopScrollProp
 	({children, scrollKey, scrollerRef}) => {
 		const internalRef = useRef<ScrollerHandle | null>(null);
 		useEffect(() => {
+			internalRef.current?.getViewportElement()?.scrollTo({top: 0, left: 0, behavior: 'instant'});
+		}, [scrollKey]);
+		useEffect(() => {
 			if (!scrollerRef) {
 				return;
 			}

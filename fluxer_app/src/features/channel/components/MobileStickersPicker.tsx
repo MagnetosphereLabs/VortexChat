@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import RuntimeConfig from '@app/features/app/state/RuntimeConfig';
+import {vortexOrigin} from '@app/vortex/Rest.js';
+import {NodeExpressionsPanel} from '@app/vortex/NodeExpressionsPanel';
 import Accessibility from '@app/features/accessibility/state/Accessibility';
 import {useSearchInputAutofocus} from '@app/features/app/hooks/useSearchInputAutofocus';
 import {EmojiPickerCategoryList} from '@app/features/channel/components/emoji_picker/EmojiPickerCategoryList';
@@ -214,6 +217,8 @@ export const MobileStickersPicker = observer(
 			},
 			[channel, handleSelect, i18n],
 		);
+		if (hasNoStickersAtAll && vortexOrigin(RuntimeConfig.apiEndpoint))
+			return <NodeExpressionsPanel kind="sticker" search={searchTerm} onSticker={handleSelect} />;
 		if (hasNoStickersAtAll) {
 			return (
 				<PickerEmptyState
@@ -280,6 +285,7 @@ export const MobileStickersPicker = observer(
 								onResize={handleResize}
 								data-flx="channel.mobile-stickers-picker.scroller"
 							>
+								<NodeExpressionsPanel kind="sticker" search={searchTerm} onSticker={handleSelect} />
 								{showPremiumUpsell && (
 									<PremiumUpsellBanner
 										message={stickerUpsellMessage}

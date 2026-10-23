@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import RuntimeConfig from '@app/features/app/state/RuntimeConfig';
+import {vortexOrigin} from '@app/vortex/Rest.js';
+import {NodeExpressionsPanel} from '@app/vortex/NodeExpressionsPanel';
 import Accessibility from '@app/features/accessibility/state/Accessibility';
 import {useSearchInputAutofocus} from '@app/features/app/hooks/useSearchInputAutofocus';
 import styles from '@app/features/channel/components/EmojiPicker.module.css';
@@ -234,6 +237,8 @@ export const StickersPicker = observer(
 			},
 			[selectAt, handleStickerSelect],
 		);
+		if (hasNoStickersAtAll && vortexOrigin(RuntimeConfig.apiEndpoint))
+			return <NodeExpressionsPanel kind="sticker" search={searchTerm} onSticker={handleSelect} />;
 		if (hasNoStickersAtAll) {
 			return (
 				<div className={gifStyles.gifPickerContainer} data-flx="channel.stickers-picker.div">
@@ -283,6 +288,7 @@ export const StickersPicker = observer(
 								onResize={handleResize}
 								data-flx="channel.stickers-picker.list"
 							>
+								<NodeExpressionsPanel kind="sticker" search={searchTerm} onSticker={handleSelect} />
 								{showPremiumUpsell && (
 									<PremiumUpsellBanner
 										message={stickerUpsellMessage}

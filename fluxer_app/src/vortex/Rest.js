@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import {changePassword,addPasskey,deletePasskey} from './AccountSecurity.js';
+import {nodeExpressionRequest,expressionBlob} from './NodeExpressions.js';
+import {invitationView} from './Invitations.js';
+import {publishProfile} from './Profiles.js';
 import {auth} from './vendor/auth.js';
-import {getSession,login,register,logout} from './Session.js';
+import {getSession,login,loginPasskey,register,logout} from './Session.js';
 import {channelView,guildView,userView,materializeMessages,callView,freePremiumState} from './Projection.js';
 import {readConversationArchive,searchPrivateMessages} from './PrivateSearch.js';
 import {planChannelMoves} from './ChannelLayout.js';
@@ -57,7 +61,16 @@ function channelPatch(session,room,body) {
 }
 async function coreDownloadEmoji(session,file) {
   if(!Number.isSafeInteger(file.size)||file.size>1024**2||!/^image\/(png|webp|gif|jpeg|avif)$/u.test(file.type))throw new Error('Invalid custom emoji');
-  return session.core.download(file);
+  return expressionBlob(session,file);
+}
+function reactionKeys(session,event,requested) {
+  const id=requested.match(/:(\d+)$/u)?.[1];if(!id)return [requested];
+  const matches=[];
+  for(const [key,entry]of event?.reactionMedia||[])try{if(session.ids.get('emoji',entry.file.id)===id)matches.push(key);}catch{}
+  if(matches.length)return matches;
+  const entry=[...session.core.state.vortexEmojis||[],...session.core.state.nodeEmojis||[]].find(item=>item.id===id);
+  if(!entry)throw new Error('This custom emoji is unavailable. Reopen the conversation to refresh it.');
+  return ['custom:'+entry.file.id];
 }
 const activeSends=new Map();
 async function sendMessage(session,room,body,files) {
@@ -67,17 +80,23 @@ async function sendMessage(session,room,body,files) {
     await session.refresh(true);
     let prior=body.nonce&&materializeMessages(session.core.state,room).find(event=>event.sender===session.pair.id&&event.payload.nonce===body.nonce);
     if(prior)return session.message(room,prior);
-    if(body.sticker_ids?.length)unsupported('/stickers');
+
     const attachments=[];
-    for(const file of files)attachments.push(await session.core.upload(file,room));
-    const payload={type:'message',text:body.content||'',nonce:body.nonce||crypto.randomUUID(),files:attachments};
+    for(const [index,file]of files.entries()){
+      const descriptor=await session.core.upload(file,room),meta=body.attachments?.[index];
+      if(typeof meta?.waveform==='string'&&meta.waveform.length<=4096)descriptor.waveform=meta.waveform;
+      const duration=meta?.duration??meta?.duration_secs;
+      if(Number.isFinite(duration)&&duration>=0)descriptor.duration=Math.min(duration,3600);
+      attachments.push(descriptor);
+    }
+    const payload={type:'message',text:body.content||'',nonce:body.nonce||crypto.randomUUID(),files:attachments,flags:Number(body.flags)&8192};
     // Emoji images and their keys travel inside the encrypted message. Copy an
     // image into this conversation before referencing an emoji from elsewhere.
     const referenced=[...payload.text.matchAll(/<(a?):([^:>]{1,32}):(\d+)>/gu)];
     const media=new Map();
     for(const match of referenced) {
       if(media.has(match[3]))continue;
-      const emoji=(session.core.state.vortexEmojis||[]).find(item=>item.id===match[3]);
+      const emoji=[...session.core.state.vortexEmojis||[],...session.core.state.nodeEmojis||[]].find(item=>item.id===match[3]);
       if(!emoji)throw new Error('This custom emoji is unavailable. Choose an emoji from this server.');
       let file=emoji.file;
       if(file.room!==room.id) {
@@ -92,6 +111,17 @@ async function sendMessage(session,room,body,files) {
       payload.emojiMedia=[...media.values()].map(({name,file})=>({name,file}));
     }
 
+    if(body.sticker_ids?.length){
+      if(body.sticker_ids.length>3)throw new Error('Send at most three stickers');
+      payload.stickerMedia=[];
+      for(const id of body.sticker_ids){
+        const sticker=[...session.core.state.vortexStickers||[],...session.core.state.nodeStickers||[]].find(item=>item.id===id);
+        if(!sticker)throw new Error('Sticker unavailable');
+        const blob=await expressionBlob(session,sticker.file);
+        const file={...await session.core.upload(new File([blob],sticker.name,{type:sticker.file.type}),room),room:room.id};
+        payload.stickerMedia.push({name:sticker.name,file});
+      }
+    }
     if(body.message_reference?.message_id)payload.reply=session.ids.raw('message',body.message_reference.message_id);
     await session.core.send(payload,'message',room);
     await session.ids.index(session.core.state);
@@ -116,7 +146,8 @@ export async function vortexRequest(origin,method,path,options={},token) {
   const form=options.raw instanceof FormData?options.raw:body instanceof FormData?body:null;
   if(form){body=JSON.parse(String(form.get('payload_json')||'{}'));for(const [,value]of form)if(value instanceof File)files.push(value);}
   let data;let status=200;
-  if(route==='/auth/login'&&method==='POST')data=await login(origin,body);
+  if(route==='/auth/passkey/login'&&method==='POST')data=await loginPasskey(origin,body);
+  else if(route==='/auth/login'&&method==='POST')data=await login(origin,body);
   else if(route==='/auth/register'&&method==='POST')data=await register(origin,body);
   else if(route==='/auth/username-availability'&&method==='GET') {
     const config=await auth.api(origin,'auth.config',{username:query.username});data={taken:config.registered};
@@ -124,7 +155,15 @@ export async function vortexRequest(origin,method,path,options={},token) {
   else {
     const session=await getSession(token,origin),core=session.core,state=core.state,ids=session.ids;
     let match;
-    if(route==='/premium/state'&&method==='GET')data=freePremiumState();
+    if((match=route.match(/^\/invites\/([A-Za-z0-9_-]{16,128})$/u))&&['GET','POST'].includes(method)){
+      data=await invitationView(session,match[1]);
+      if(method==='POST'){
+        await core.respondInvitation(match[1],true);await session.refresh(true);
+        const space=state.spaces.find(item=>ids.get('guild',item.id)===data.guild.id);
+        if(space){const guild=guildView(ids,state,space);session.emit('GUILD_CREATE',guild);for(const channel of guild.channels)session.emit('CHANNEL_CREATE',channel);}
+      }
+    }
+    else if(route==='/premium/state'&&method==='GET')data=freePremiumState();
     else if(route==='/search/messages'&&method==='POST')data=await searchPrivateMessages(session,body,options.signal);
     else if(route==='/users/@me/saved-messages'&&method==='POST') {
       const room=session.room(body.channel_id);
@@ -157,6 +196,7 @@ export async function vortexRequest(origin,method,path,options={},token) {
       await core.savePreferences();session.emit('SAVED_MESSAGE_DELETE',{message_id:match[1]});status=204;
     }
     else if(route==='/users/@me'&&method==='GET')data=session.currentUser();
+    else if(route==='/users/@me'&&method==='PATCH')data=await publishProfile(session,body);
     else if(route==='/users/@me/mfa/totp/start'&&method==='POST')data=await core.action('totp.start');
     else if(route==='/users/@me/mfa/totp/enable'&&method==='POST'){
       const result=await core.action('totp.finish',{otp:body.code});
@@ -165,11 +205,17 @@ export async function vortexRequest(origin,method,path,options={},token) {
     } else if(route==='/users/@me/mfa/totp/disable'&&method==='POST'){
       await core.action('totp.disable',{otp:body.code});state.me=await core.action('me');session.emit('USER_UPDATE',session.currentUser());status=204;
     }
+    else if(route==='/vortex/account/password'&&method==='POST')data=await changePassword(session,body);
+    else if(route==='/vortex/account/passkeys'&&method==='GET')data=await core.action('passkey.list');
+    else if(route==='/vortex/account/passkeys'&&method==='POST')data=await addPasskey(session,body);
+    else if(route==='/vortex/account/passkeys'&&method==='DELETE')data=await deletePasskey(session,body);
     else if(route==='/users/@me/settings') {
       if(method==='PATCH') {
+        if(['friend_source_flags','incoming_call_flags','group_dm_add_permission_flags'].some(key=>body[key]!==undefined))state.me.privacy=await core.action('privacy',body);
         state.prefs.fluxer=userSettingsView(state,body);
         state.prefs.status=state.prefs.fluxer.status;
         await core.savePreferences();
+        if(body.profile_privacy!==undefined)await publishProfile(session);
         session.emit('USER_SETTINGS_UPDATE',userSettingsView(state));
       }
       else if(method!=='GET')unsupported(route);
@@ -197,7 +243,7 @@ export async function vortexRequest(origin,method,path,options={},token) {
     } else if((match=route.match(/^\/users\/(\d+)(\/profile)?$/u))&&method==='GET') {
       const user=state.users.find(u=>u.id===ids.raw('user',match[1]));
       if(!user)throw Object.assign(new Error('Account unavailable'),{status:404});
-      data=match[2]?{user:userView(ids,user),user_profile:{bio:'',pronouns:'',accent_color:null,banner:null},connected_accounts:[],mutual_guilds:[],mutual_friends:[]}:userView(ids,user);
+      data=match[2]?{user:userView(ids,user),user_profile:{bio:user.vortexProfile?.bio||'',pronouns:user.vortexProfile?.pronouns||'',accent_color:user.vortexProfile?.accent_color??null,banner:user.vortexBanner||null},connected_accounts:[],mutual_guilds:[],mutual_friends:[]}:userView(ids,user);
     } else if(route==='/guilds'&&method==='POST') {
       if(typeof body.name!=='string'||!body.name.trim())throw Object.assign(new Error('Enter a server name'),{status:400});
       if(body.icon)unsupported('/guilds/icon');
@@ -220,8 +266,8 @@ export async function vortexRequest(origin,method,path,options={},token) {
       }
       await session.refresh(true);const guild=guildView(ids,state,state.spaces.find(s=>s.id===space));
       session.emit('GUILD_CREATE',guild);data={...guild.properties,roles:guild.roles,channels:guild.channels};
-    } else if((match=route.match(/^\/guilds\/(\d+)\/emojis(.*)$/u))) {
-      const result=await emojiCatalogRequest(session,ids.raw('guild',match[1]),method,match[2],body);data=result.body;status=result.status;
+    } else if((match=route.match(/^\/guilds\/(\d+)\/(emojis|stickers)(.*)$/u))) {
+      const result=await emojiCatalogRequest(session,ids.raw('guild',match[1]),method,match[3],body,match[2]==='stickers'?'sticker':'emoji');data=result.body;status=result.status;
     } else if((match=route.match(/^\/guilds\/(\d+)\/channels$/u))) {
       const space=ids.raw('guild',match[1]);
       if(method==='GET')data=state.rooms.filter(room=>room.space===space).map(room=>channelView(ids,state,room));
@@ -300,8 +346,8 @@ export async function vortexRequest(origin,method,path,options={},token) {
         else if(eventRoute[3]==='reactions'){
           if(method==='GET'){
             const event=materializeMessages(state,room).find(event=>event.id===target&&!event.deleted);
-            const requested=decodeURIComponent(eventRoute[4]),emoji=(state.vortexEmojis||[]).find(item=>requested.endsWith(':'+item.id));
-            const people=event?.reactions.get(emoji?'custom:'+emoji.file.id:requested)||new Set();
+            const requested=decodeURIComponent(eventRoute[4]);
+            const people=new Set(reactionKeys(session,event,requested).flatMap(key=>[...event?.reactions.get(key)||[]]));
             data=[...people].map(id=>state.users.find(user=>user.id===id)||state.formerUsers?.find(user=>user.id===id)).filter(Boolean).map(user=>userView(ids,user));
             if(query.after)data=data.filter(user=>BigInt(user.id)>BigInt(query.after));
             data.sort((a,b)=>BigInt(a.id)<BigInt(b.id)?-1:1);data=data.slice(0,Math.max(1,Math.min(100,Number(query.limit)||25)));
@@ -309,9 +355,15 @@ export async function vortexRequest(origin,method,path,options={},token) {
           }
           if(!['PUT','DELETE'].includes(method))unsupported(route);
           const requested=decodeURIComponent(eventRoute[4]),custom=requested.match(/^([^:]+):(\d+)$/u);
-          const entry=custom&&(state.vortexEmojis||[]).find(emoji=>emoji.id===custom[2]);
-          if(custom&&!entry)throw new Error('This custom emoji is unavailable. Reopen the conversation to refresh it.');
-          await core.send({type:'reaction',target,emoji:entry?'custom:'+entry.file.id:requested,remove:method==='DELETE',...(entry?{emojiFile:entry.file,emojiName:entry.name}:{})},'message',room);status=204;
+          const event=materializeMessages(state,room).find(event=>event.id===target&&!event.deleted);
+          const keys=reactionKeys(session,event,requested),key=keys.find(key=>event?.reactions.get(key)?.has(state.me.id))||keys[0];
+          const entry=custom&&[...state.vortexEmojis||[],...state.nodeEmojis||[]].find(emoji=>emoji.id===custom[2]);
+          let file=event?.reactionMedia?.get(key)?.file||entry?.file;
+          if(custom&&method==='PUT'&&file?.room!==room.id){const blob=await expressionBlob(session,file);file={...await core.upload(new File([blob],entry?.name||custom[1],{type:file.type}),room),room:room.id};}
+          for(const alias of method==='DELETE'?keys:[key])await core.send({type:'reaction',target,emoji:alias,remove:method==='DELETE',...(custom?{emojiFile:event?.reactionMedia?.get(alias)?.file||file,emojiName:entry?.name||custom[1]}:{})},'message',room);
+          const updated=materializeMessages(state,room).find(event=>event.id===target&&!event.deleted);
+          if(updated)session.emit('MESSAGE_UPDATE',await session.message(room,updated));
+          status=204;
         } else if(eventRoute[1]==='pins'&&['PUT','DELETE'].includes(method)){await core.send({type:'pin',target,enabled:method==='PUT'},'message',room);status=204;}
         else if(method==='PATCH'){await core.send({type:'edit',target,text:body.content},'message',room);}
         else if(method==='DELETE'){await core.send({type:'delete',target},'message',room);session.emit('MESSAGE_DELETE',{id:eventRoute[2],channel_id:match[1]});status=204;}
@@ -346,10 +398,17 @@ export async function vortexRequest(origin,method,path,options={},token) {
     else if(route==='/vortex/spaces'&&method==='GET')data=state.spaces.map(space=>({id:space.id,name:state.rooms.find(r=>r.space===space.id)?.meta.spaceName||'Server',canInvite:space.creator===state.me.id||!!(space.permissions&2)}));
     else if(route==='/vortex/space-invites'&&method==='GET')data=(await core.invitations()).map(item=>({id:item.id,name:item.name,sender:state.users.find(u=>u.id===item.sender)?.username,channels:item.body.rooms.length}));
     else if(route==='/vortex/space-invites'&&method==='POST'){
+      await session.refresh(true);
       const target=state.users.find(user=>user.username===body.username);if(!target)throw new Error('No account has that username on this Node');
       data={id:await core.inviteSpace(body.space||(body.guild_id&&ids.raw('guild',body.guild_id)),target.id)};
     }
-    else if(route==='/vortex/space-invites'&&method==='PATCH'){await core.respondInvitation(body.id,body.accept===true);await session.refresh(true);status=204;}
+    else if(route==='/vortex/space-invites'&&method==='PATCH'){
+      const previous=new Set(state.spaces.map(space=>space.id));
+      await core.respondInvitation(body.id,body.accept===true);await session.refresh(true);
+      for(const space of state.spaces)if(!previous.has(space.id)){const guild=guildView(ids,state,space);session.emit('GUILD_CREATE',guild);for(const channel of guild.channels)session.emit('CHANNEL_CREATE',channel);}
+      status=204;
+    }
+    else if((match=route.match(/^\/vortex\/expressions(?:\/(\d+))?$/u)))data=await nodeExpressionRequest(session,method,match[1],body);
     else if(route==='/vortex/storage'&&method==='GET')data=await core.action('admin.storage');
     else if(['/users/@me/push/subscribe','/users/@me/push/rotate'].includes(route)&&method==='POST'){
       await core.action('push',{endpoint:body.endpoint,p256dh:body.keys?.p256dh,auth:body.keys?.auth});

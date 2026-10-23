@@ -40,10 +40,10 @@ export class VortexIds {
 
 export function userView(ids,user,privateData) {
   const result={id:ids.get('user',user.id),username:user.username,discriminator:'0',global_name:user.display||user.username,
-    avatar:null,avatar_color:null,bot:false,system:false,flags:0,traits:['premium'],premium_badge_hidden:true};
+    avatar:user.vortexAvatar||null,avatar_color:null,bot:false,system:false,flags:0,traits:['premium'],premium_badge_hidden:true};
   if(!privateData)return result;
-  return {...result,vortex_node_owner:privateData.owner===true,is_staff:false,acls:[],email:null,has_verified_phone:false,bio:null,pronouns:null,accent_color:null,
-    banner:null,banner_color:null,mfa_enabled:privateData.totp,verified:true,premium_type:0,premium_since:null,premium_until:null,
+  return {...result,vortex_node_owner:privateData.owner===true,is_staff:false,acls:[],email:null,has_verified_phone:false,bio:user.vortexProfile?.bio||null,pronouns:user.vortexProfile?.pronouns||null,accent_color:user.vortexProfile?.accent_color??null,
+    banner:user.vortexBanner||null,banner_color:user.vortexProfile?.banner_color??null,mfa_enabled:privateData.totp,verified:true,premium_type:0,premium_since:null,premium_until:null,
     premium_will_cancel:false,premium_billing_cycle:null,premium_lifetime_sequence:null,premium_grace_ends_at:null,
     premium_discriminator:false,premium_badge_hidden:true,premium_badge_masked:false,premium_badge_timestamp_hidden:true,
     premium_badge_sequence_hidden:true,premium_purchase_disabled:true,premium_enabled_override:true,premium_perks_disabled:false,
@@ -76,7 +76,7 @@ export function guildView(ids,state,space) {
     members:memberIds.map(userId=>({user:userView(ids,state.users.find(u=>u.id===userId)||{id:userId,username:'deleted-user'}),
       roles:[],joined_at:new Date(0).toISOString(),mute:false,deaf:false})),
     member_count:memberIds.length,online_count:memberIds.filter(userId=>state.users.find(u=>u.id===userId)?.status==='online').length,
-    emojis:(state.vortexEmojis||[]).filter(emoji=>emoji.space===space.id&&emoji.catalog===true).map(({space,file,catalog,...emoji})=>emoji),stickers:[],voice_states:[],presences:[],joined_at:new Date(0).toISOString()};
+    emojis:(state.vortexEmojis||[]).filter(emoji=>emoji.space===space.id&&emoji.catalog===true).map(({space,file,catalog,...emoji})=>emoji),stickers:(state.vortexStickers||[]).filter(item=>item.space===space.id&&item.catalog===true).map(({file,space,catalog,...item})=>item),voice_states:[],presences:[],joined_at:new Date(0).toISOString()};
 }
 
 export function materializeMessages(state,room,events=state.messages.get(room.id)||[]) {
@@ -118,11 +118,14 @@ export function callView(ids,state,room,now=Date.now()/1000) {
       }
     }
     if(call.state==='ring'&&[...active.keys()].some(id=>id.startsWith(event.sender+':'))&&event.at>now-35)
-      for(const recipient of call.recipients||[])if(members.has(recipient)&&recipient!==event.sender)ringing.set(recipient,event.sender);
+      for(const recipient of call.recipients||[])if(members.has(recipient)&&recipient!==event.sender){if(recipient===state.me?.id&&event.ringAllowed===false)ringing.delete(recipient);else ringing.set(recipient,event.sender);}
     if(call.state==='stop-ringing')for(const recipient of call.recipients||[])
       if(recipient===event.sender||ringing.get(recipient)===event.sender)ringing.delete(recipient);
   }
   if(!active.size)return null;
+  const flags=state.me?.privacy?.incoming_call_flags??state.prefs?.fluxer?.incoming_call_flags??8;
+  if(flags&(16|32))ringing.delete(state.me?.id);
+
   for(const voice of active.values())ringing.delete(ids.raw('user',voice.user_id));
   return {channel_id:ids.get('channel',room.id),region:'auto',voice_states:[...active.values()],ringing:[...ringing.keys()].map(id=>ids.get('user',id))};
 }

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {Routes} from '@app/app/Routes';
+import Authentication from '@app/features/auth/state/Authentication';
+import {vortexOrigin} from '@app/vortex/Rest.js';
 import {getActiveInstanceProductName} from '@app/features/app/state/ActiveInstanceProductName';
 import type {RuntimeConfigSnapshot} from '@app/features/app/state/InstanceSnapshotStore';
 import {AuthErrorState} from '@app/features/auth/flow/AuthErrorState';
@@ -40,15 +43,16 @@ export function useInviteAuthPage(code: string, runtimeSnapshot: RuntimeConfigSn
 	);
 	useFluxerDocumentTitle(i18n._(ACCEPT_INVITE_DESCRIPTOR));
 	const {setSplashUrl, setSplashCardAlignment} = useAuthLayoutContext();
+	const needsNodeSignIn = !!vortexOrigin(runtimeSnapshot.apiEndpoint) && !Authentication.isAuthenticated;
 	const inviteState = Invites.getInvite(code, inviteTarget);
 	const inviteData = inviteState?.data ?? null;
 	const guildInvite = inviteData && isGuildInvite(inviteData) ? inviteData : null;
 	useEffect(() => {
 		const currentInviteState = Invites.getInvite(code, inviteTarget);
-		if (!currentInviteState && code) {
+		if (!needsNodeSignIn && (!currentInviteState || currentInviteState.error) && code) {
 			void InviteCommands.fetchWithCoalescing(code, inviteTarget).catch(() => {});
 		}
-	}, [code, inviteTarget]);
+	}, [code, inviteTarget, needsNodeSignIn]);
 	useEffect(() => {
 		if (!guildInvite) {
 			return;
@@ -84,8 +88,30 @@ export function useInviteAuthPage(code: string, runtimeSnapshot: RuntimeConfigSn
 		isRaidDetected,
 	};
 }
-export function InviteAuthPageState({loading, prefix}: {loading: boolean; prefix: string}) {
+export function InviteAuthPageState({
+	loading,
+	prefix,
+	code,
+	endpoint,
+}: {
+	loading: boolean;
+	prefix: string;
+	code?: string;
+	endpoint?: string;
+}) {
 	const {i18n} = useLingui();
+	if (code && vortexOrigin(endpoint) && !Authentication.isAuthenticated)
+		return (
+			<AuthErrorState
+				title="Private server invitation"
+				text="Sign in to the Vortex Node account that received this invitation to view the server and join."
+				action={
+					<AuthRouterLink to="/login" search={{redirect_to: Routes.inviteRegister(code)}}>
+						<Button fitContainer>Sign in to view invitation</Button>
+					</AuthRouterLink>
+				}
+			/>
+		);
 	if (loading) return <AuthLoadingState data-flx={`${prefix}.auth-loading-state`} />;
 	return (
 		<AuthErrorState

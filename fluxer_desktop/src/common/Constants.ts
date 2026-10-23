@@ -40,5 +40,5 @@ export const DESKTOP_FIRST_CONTENT_PAINTED_CHANNEL = 'desktop-window:first-conte
 export const STATIC_CDN_URL = 'https://fluxerstatic.com';
 export const DEFAULT_WINDOW_WIDTH = 1280;
 export const DEFAULT_WINDOW_HEIGHT = 800;
-export const MIN_WINDOW_WIDTH = 800;
+export const MIN_WINDOW_WIDTH = 480;
 export const MIN_WINDOW_HEIGHT = 600;

@@ -4,9 +4,11 @@ import {UserSettingsModal} from '@app/features/app/components/dialogs/LoadableSe
 import * as ModalCommands from '@app/features/ui/commands/ModalCommands';
 import {modal} from '@app/features/ui/commands/ModalCommands';
 import UserSettings from '@app/features/user/state/UserSettings';
+import RuntimeConfig from '@app/features/app/state/RuntimeConfig';
+import {vortexOrigin} from '@app/vortex/Rest.js';
 
 export function openUserSettingsModal(): void {
-	const privacyReviewPending = UserSettings.isPrivacySetupPending();
+	const privacyReviewPending = !vortexOrigin(RuntimeConfig.apiEndpoint) && UserSettings.isPrivacySetupPending();
 	ModalCommands.push(
 		modal(
 			() =>

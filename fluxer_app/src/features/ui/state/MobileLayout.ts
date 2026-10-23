@@ -7,8 +7,8 @@ import {initializeStore} from '@app/features/platform/utils/StoreInitialization'
 import Window from '@app/features/window/state/Window';
 import {makeAutoObservable, reaction} from 'mobx';
 
-const MOBILE_ENABLE_BREAKPOINT = 640;
-const MOBILE_DISABLE_BREAKPOINT = 768;
+const MOBILE_ENABLE_BREAKPOINT = 960;
+const MOBILE_DISABLE_BREAKPOINT = 1024;
 const shouldForceMobileLayout = (): boolean => Platform.isMobileBrowser;
 const getInitialMobileEnabled = (): boolean => {
 	if (shouldForceMobileLayout()) {

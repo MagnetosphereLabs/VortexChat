@@ -9,7 +9,7 @@ const defaults={
   inline_attachment_media:true,inline_embed_media:true,gif_auto_play:true,
   render_embeds:true,render_reactions:true,animate_emoji:true,animate_stickers:0,
   render_spoilers:1,message_display_compact:false,developer_mode:false,
-  friend_source_flags:0,incoming_call_flags:0,group_dm_add_permission_flags:0,
+  friend_source_flags:7,incoming_call_flags:8,group_dm_add_permission_flags:4,
   profile_privacy:0,default_share_voice_activity:true,privacy_setup_version:0,
   privacy_setup_completed_at:null,custom_status:null,afk_timeout:600,
   default_hide_muted_channels:false,sensitive_content_friend_dm_filter:0,
@@ -33,6 +33,7 @@ export function userSettingsView(state,patch={}) {
     if(fallback===null)result[field]=value??null;
     else if(typeof value===typeof fallback&&(typeof value!=='number'||Number.isSafeInteger(value)))result[field]=value;
   }
+  for(const key of ['friend_source_flags','incoming_call_flags','group_dm_add_permission_flags'])if(Number.isSafeInteger(state.me?.privacy?.[key]))result[key]=state.me.privacy[key];
   result.status=presenceStatus(values.status??prefs.status??'online');
   result.status_resets_to=values.status_resets_to==null?null:presenceStatus(values.status_resets_to);
   for(const field of arrayFields)result[field]=strings(values[field]);

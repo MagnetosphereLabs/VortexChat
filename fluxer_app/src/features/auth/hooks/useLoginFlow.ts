@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {vortexOrigin, vortexRequest} from '@app/vortex/Rest.js';
 import {type RuntimeConfigSnapshot, runtimeInstanceKey} from '@app/features/app/state/InstanceSnapshotStore';
 import RuntimeConfig from '@app/features/app/state/RuntimeConfig';
 import {resolveSnapshotInstanceDomain} from '@app/features/auth/AccountDisplayUtils';
@@ -220,6 +221,23 @@ export function useLoginFormController({
 		let navigating = false;
 		try {
 			const requestRuntimeSnapshot = requireLoginRuntimeSnapshot(runtimeSnapshot);
+			const nodeOrigin = vortexOrigin(requestRuntimeSnapshot.apiEndpoint);
+			if (nodeOrigin) {
+				const response = await vortexRequest<AuthenticationCommands.AuthTokenResponse>(
+					nodeOrigin,
+					'POST',
+					'/auth/passkey/login',
+					{body: {username: form.getValue(identifierField)}},
+				);
+				await handleLoginOutcome(
+					{type: 'success', payload: toLoginSuccessPayload(response.body)},
+					onLoginSuccess,
+					onRequireMfa,
+					onRequireIpAuthorization,
+					redirectPath,
+				);
+				return;
+			}
 			let outcome: LegacyPasskeyLoginOutcome | null = null;
 			if (!migrationOrigin || readPasskeyLoginRoute() === 'native') {
 				const capability = await resolvePasskeyLoginCapability();
@@ -270,6 +288,10 @@ export function useLoginFormController({
 			}
 		} catch (err) {
 			logger.error('Passkey login failed', err);
+			if (runtimeSnapshot && vortexOrigin(runtimeSnapshot.apiEndpoint)) {
+				ToastCommands.error(err instanceof Error ? err.message : 'Passkey sign-in could not be completed');
+				return;
+			}
 			if (AuthenticationCommands.showAccountRestriction(err)) {
 				return;
 			}
@@ -283,7 +305,18 @@ export function useLoginFormController({
 				setIsPasskeyLoading(false);
 			}
 		}
-	}, [inviteCode, onLoginSuccess, redirectPath, onDesktopPasskeyHandoff, i18n, runtimeSnapshot]);
+	}, [
+		inviteCode,
+		onLoginSuccess,
+		redirectPath,
+		onDesktopPasskeyHandoff,
+		i18n,
+		runtimeSnapshot,
+		form,
+		identifierField,
+		onRequireMfa,
+		onRequireIpAuthorization,
+	]);
 	const connectingMessage =
 		connectingDomain === null ? null : i18n._(CONNECTING_TO_INSTANCE_DESCRIPTOR, {domain: connectingDomain});
 	return {

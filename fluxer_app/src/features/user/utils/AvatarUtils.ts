@@ -139,6 +139,16 @@ const parseMediaHashForRequest = (value: string, animated = false) => {
 	};
 };
 const getMediaURL = ({path, id, hash, size, format, animated, endpoint, instanceKey}: MediaURLParams) => {
+	if (hash.startsWith('vortex_') && ['avatars', 'banners'].includes(path)) {
+		const origin = new URL(RuntimeConfig.apiEndpoint).origin;
+		return (
+			getEmojiMedia(
+				(path === 'avatars' ? 'avatar' : 'banner') + ':' + id + ':' + hash,
+				origin,
+				Users.getCurrentUser()?.id,
+			) || ''
+		);
+	}
 	const baseEndpoint = endpoint === undefined ? RuntimeConfig.mediaEndpoint : endpoint;
 	if (!baseEndpoint) {
 		return '';
@@ -539,6 +549,9 @@ export function getStickerURL({
 	isAnimatable?: boolean;
 	size?: StickerSize;
 }) {
+	const endpoint = RuntimeConfig.getSnapshotOrNull()?.apiEndpoint;
+	if (endpoint?.endsWith('/vortex/api'))
+		return getEmojiMedia('sticker:' + id, new URL(endpoint).origin, Users.getCurrentUser()?.id) || '';
 	const animatedFlag = isAnimatable === false ? false : animated === true;
 	const safeSize: StickerSize = size === 320 ? 320 : 160;
 	const key = `${mediaURLCacheScope()}:${animatedFlag ? 'a' : 's'}:${safeSize}:${id}`;

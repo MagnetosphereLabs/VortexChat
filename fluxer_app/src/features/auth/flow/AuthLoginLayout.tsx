@@ -913,6 +913,8 @@ export const AuthLoginLayout = observer(function AuthLoginLayout({
 					);
 		return (
 			<AuthLoginCredentialStepPanel
+				onPasskeyLogin={handlePasskeyLogin}
+				passkeyLoading={isPasskeyLoading}
 				extraTopContent={extraTopContent}
 				showTitle={showTitle}
 				title={resolveAuthStepTitle(title, i18n._(WELCOME_BACK_DESCRIPTOR))}

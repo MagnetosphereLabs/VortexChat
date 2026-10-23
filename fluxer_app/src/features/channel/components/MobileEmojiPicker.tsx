@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {NodeExpressionsPanel} from '@app/vortex/NodeExpressionsPanel';
 import Accessibility from '@app/features/accessibility/state/Accessibility';
 import {useSearchInputAutofocus} from '@app/features/app/hooks/useSearchInputAutofocus';
 import {useShouldAnimate} from '@app/features/app/hooks/useShouldAnimate';
@@ -254,6 +255,7 @@ export const MobileEmojiPicker = observer(
 								onResize={handleResize}
 								data-flx="channel.mobile-emoji-picker.scroller"
 							>
+								<NodeExpressionsPanel kind="emoji" search={searchTerm} onEmoji={handleSelect} />
 								{showPremiumUpsell && (
 									<PremiumUpsellBanner
 										message={emojiUpsellMessage}

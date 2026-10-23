@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import RuntimeConfig from '@app/features/app/state/RuntimeConfig';
+import {vortexOrigin} from '@app/vortex/Rest.js';
+import VortexAccountSecurityTab from '@app/vortex/AccountSecurityTab';
 import {SettingsTabContainer, SettingsTabContent} from '@app/features/app/components/dialogs/shared/SettingsTabLayout';
 import {StreamerModeGate} from '@app/features/streamer_mode/components/StreamerModeGate';
 import StreamerMode from '@app/features/streamer_mode/state/StreamerMode';
@@ -20,7 +23,7 @@ interface AccountSecurityTabProps {
 	initialSubtab?: string;
 }
 
-const AccountSecurityTab: React.FC<AccountSecurityTabProps> = observer(({settingsTabType, initialSubtab}) => {
+const StandardAccountSecurityTab: React.FC<AccountSecurityTabProps> = observer(({settingsTabType, initialSubtab}) => {
 	const user = Users.currentUser;
 	const [showMaskedEmail, setShowMaskedEmail] = useState(false);
 	if (!user) return null;
@@ -54,4 +57,16 @@ const AccountSecurityTab: React.FC<AccountSecurityTabProps> = observer(({setting
 	);
 });
 
+const AccountSecurityTab: React.FC<AccountSecurityTabProps> = observer((props) =>
+	vortexOrigin(RuntimeConfig.apiEndpoint) &&
+	(!props.settingsTabType || props.settingsTabType === 'account_security') ? (
+		StreamerMode.shouldHidePersonalInformation ? (
+			<StreamerModeGate />
+		) : (
+			<VortexAccountSecurityTab />
+		)
+	) : (
+		<StandardAccountSecurityTab {...props} />
+	),
+);
 export default AccountSecurityTab;
