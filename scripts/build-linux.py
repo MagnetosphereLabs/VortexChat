@@ -76,11 +76,27 @@ def deploy_web(output, result, target, port=None, node_revision=None, ssh_option
             '--archive', remote + '/vortex-chat-web.tar.gz', '--sha256', digest,
             '--source-commit', result['source_commit']])
         if node_revision:
+            repository = 'https://github.com/MagnetosphereLabs/VortexNode.git'
+            source = remote + '/node-source'
+            installer = remote + '/node-install.sh'
+            # An installed updater cannot learn new build dependencies until it
+            # succeeds. Bootstrap the selected revision's installer without sudo.
+            prepare = [
+                shlex.join(['git', 'init', '--quiet', source]),
+                shlex.join(['git', '-C', source, '-c', 'protocol.file.allow=never',
+                            'fetch', '--depth', '1', '--quiet', repository, node_revision]),
+                '[ "$(' + shlex.join(['git', '-C', source, 'rev-parse', 'FETCH_HEAD'])
+                    + ')" = ' + node_revision + ' ] || { echo "Node installer revision mismatch" >&2; exit 1; }',
+                shlex.join(['git', '-C', source, 'show', node_revision + ':install.sh'])
+                    + ' > ' + shlex.quote(installer),
+                shlex.join(['sudo', 'bash', installer, 'update', '--repo', repository,
+                            '--ref', 'vortex/preview']),
+            ]
             command = ('set -e\n'
                 'test -x /opt/vortex-node/install.sh || { echo "Existing Vortex Node installer was not found" >&2; exit 1; }\n'
                 'vortex_installed_ref=$(basename "$(readlink -f /opt/vortex-node/current)")\n'
                 'if [ "$vortex_installed_ref" != ' + shlex.quote(node_revision) + ' ]; then\n'
-                '  sudo /opt/vortex-node/install.sh update --ref vortex/preview\n'
+                + '\n'.join('  ' + step for step in prepare) + '\n'
                 'else\n  echo "Vortex Node backend is already current"\nfi\n' + command)
         run(*ssh, '-tt', ssh_target, command)
     finally:
