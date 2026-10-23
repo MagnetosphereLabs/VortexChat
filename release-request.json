@@ -1,0 +1,9 @@
+{
+  "release": "vortex-v0.1.0-rc.1",
+  "client_sha": "261a9ecb4ece935be04ecf6f4d37c2b80d94d971",
+  "node_sha": "af65f171997af9d21874b443741757580070fc12",
+  "web_run": 39874819742,
+  "linux_run": 39874819740,
+  "node_run": 39871952072,
+  "notes": "Vortex Chat 0.1.0-rc.1 connects the shared web/Linux interface to a self-hosted Vortex Node. This candidate is intended for hands-on testing.\n\nThe matched builds passed Node security/storage tests, encrypted protocol integration tests, Chrome/Firefox/WebKit sign-in and message restoration, packaged Linux keyring/sign-in/message restoration, and relay tests for encrypted video, audio, control data and participant removal. Actual device capture, distribution-specific audio and a production VPS installation still need acceptance testing.\n\nInstall the matched backend from the VortexNode `vortex/preview` branch after its client manifest is published. The backend installs the web client automatically. Install the Linux archive using `install-linux.py --release vortex-v0.1.0-rc.1`; the installer validates its checksum and preserves the application sandbox. A cached local compilation option is documented in `docs/vortex/BUILD_LINUX.md`.\n\nThis is not complete Fluxer feature parity or an independently audited security release. Full roles/permissions and moderation, threads/forums/polls, custom emoji/stickers, profile customization, recovery-kit integration and bots/webhooks need further work. Windows/macOS and Flutter mobile are not qualified native releases. Federation is deferred.\n\nSee `docs/vortex/TESTING.md`, `docs/vortex/SECURITY.md` and `docs/vortex/PLATFORMS.md` for supported testing paths and limitations. Vortex Vault remains a separate optional application. All license and third-party notices remain applicable."
+}

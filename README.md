@@ -2,17 +2,19 @@
 
 Vortex Chat connects Fluxer’s web and desktop interface to [Vortex Node](https://github.com/MagnetosphereLabs/VortexNode). Conversation contents and attachments are encrypted and decrypted on participants’ devices. Vortex Vault remains a separate application with its existing storage format.
 
-**Integration branch:** `vortex/integration-20261022`. This branch is under active validation. A successful compilation is not a release qualification. Browser sign-in, conversation restore, packaged Linux startup, calls and screen sharing must pass their respective checks before a supported release is published.
+**Candidate:** [0.1.0-rc.1](https://github.com/MagnetosphereLabs/VortexChat/releases/tag/vortex-v0.1.0-rc.1). The tested application source is `261a9ecb4ece935be04ecf6f4d37c2b80d94d971` on `vortex/integration-20261022`. Automated browser, packaged Linux and encrypted-media checks passed for the matched build. This is ready for hands-on testing; full Fluxer feature parity, actual hardware capture testing and independent security review remain work.
 
 ## Install
 
 The backend runs on your server. The desktop application runs on your computer. A browser connects to your Node’s HTTPS domain.
 
-A published Vortex release contains the web archive, Linux application archive, checksums and a matching `desktop-release.json`. The Linux installer accepts an explicit release tag:
+On your Linux x86-64 desktop, run:
 
 ```sh
-sudo python3 install-linux.py --release RELEASE_TAG
+(set -e; f="$(mktemp)"; trap 'rm -f "$f"' EXIT; curl --proto '=https' --tlsv1.2 -fsSL 'https://raw.githubusercontent.com/MagnetosphereLabs/VortexChat/261a9ecb4ece935be04ecf6f4d37c2b80d94d971/install-linux.py' -o "$f"; sudo python3 "$f" --release vortex-v0.1.0-rc.1)
 ```
+
+Then open **Vortex Chat**, choose **Add instance**, enter your Node's HTTPS domain and sign in. The [matched Node installer](https://github.com/MagnetosphereLabs/VortexNode/tree/vortex/preview) runs on your Ubuntu server and installs the browser client automatically. For an existing Node, use that candidate installation command once to switch from the older alpha; subsequent manual updates remember the preview reference.
 
 After the first installation, update with:
 
@@ -20,7 +22,7 @@ After the first installation, update with:
 sudo /opt/vortex-chat/update --release RELEASE_TAG
 ```
 
-Use the actual tag from a published Vortex release. The installer does not install an unverified development archive. Linux x86-64 requires glibc 2.35 or newer. Its dependency setup covers Ubuntu/Debian, Fedora and Arch families; hardware, portals and audio still need distribution-specific testing. It creates an application-menu entry, preserves the Chromium sandbox and uses the desktop keyring for local encryption keys.
+Use the actual tag from a published Vortex release, such as `vortex-v0.1.0-rc.1`. Release downloads are checksum-verified. The separate local-build mode requires an explicit archive, source commit and checksum and does not claim release qualification. Linux x86-64 requires glibc 2.35 or newer. Its dependency setup covers Ubuntu/Debian, Fedora and Arch families; hardware, portals and audio still need distribution-specific testing. It creates an application-menu entry, preserves the Chromium sandbox and uses the desktop keyring for local encryption keys.
 
 The Node installer pins a matching web archive in `clients.lock.json`. Open the Node domain to use that client in a browser. See the [Node repository](https://github.com/MagnetosphereLabs/VortexNode) for server installation and updates.
 
