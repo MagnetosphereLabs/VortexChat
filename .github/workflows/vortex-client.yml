@@ -1,10 +1,5 @@
 name: Vortex clients
 on:
-  push:
-    branches: [main, 'vortex/**']
-    tags: ['vortex-v*']
-    paths-ignore: ['README.md', 'docs/**', 'release-request.json']
-  pull_request:
   workflow_dispatch:
 permissions:
   contents: read

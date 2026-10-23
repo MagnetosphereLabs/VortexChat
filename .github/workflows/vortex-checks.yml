@@ -1,0 +1,31 @@
+name: Vortex quick checks
+on:
+  push:
+    branches: [main, 'vortex/**']
+    paths: ['scripts/**', 'fluxer_app/src/vortex/**', 'install-linux.py', '.github/workflows/vortex-*.yml']
+  pull_request:
+    paths: ['scripts/**', 'fluxer_app/src/vortex/**', 'install-linux.py', '.github/workflows/vortex-*.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vortex-quick-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - name: Verify local installers and release checks
+        run: |
+          python3 scripts/test-install-linux.py
+          python3 scripts/test-deploy-local-web.py
+          python3 scripts/test-publish-vortex-release.py
+          python3 -m py_compile scripts/build-linux.py scripts/deploy-local-web.py
+          bash -n scripts/build-linux-container.sh
+      - name: Verify account settings compatibility
+        run: node --test fluxer_app/src/vortex/UserSettingsView.test.mjs

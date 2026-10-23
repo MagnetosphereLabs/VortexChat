@@ -1,16 +1,5 @@
 name: Vortex Linux
 on:
-  push:
-    branches: [main, 'vortex/**']
-    paths:
-      - 'fluxer_desktop/**'
-      - 'fluxer_app/**'
-      - 'packages/**'
-      - 'install-linux.py'
-      - 'scripts/test-install-linux.py'
-      - 'scripts/build-linux*'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/vortex-linux.yml'
   workflow_dispatch:
 permissions:
   contents: read
