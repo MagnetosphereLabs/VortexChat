@@ -18,6 +18,9 @@
 	color: var(--text-secondary);
 	line-height: 1.5;
 }
+.empty {
+	margin-block: 0.75rem;
+}
 .grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
