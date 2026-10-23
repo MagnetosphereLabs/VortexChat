@@ -135,6 +135,7 @@ export class User {
 	readonly flags: number;
 	readonly mentionFlags: MentionReplyPreference;
 	readonly avatarColor: number | null | undefined;
+	readonly vortexNodeOwner: boolean | undefined;
 	private readonly _isStaff: boolean | undefined;
 	private readonly _email: string | null | undefined;
 	private readonly _emailBounced: boolean | undefined;
@@ -187,6 +188,7 @@ export class User {
 		this.flags = user.flags;
 		this.mentionFlags = user.mention_flags ?? 0;
 		this.avatarColor = hasKey(user, 'avatar_color') ? user.avatar_color : undefined;
+		this.vortexNodeOwner = hasKey(user, 'vortex_node_owner') ? user.vortex_node_owner : undefined;
 		this._isStaff = hasKey(user, 'is_staff') ? user.is_staff : undefined;
 		this._email = hasKey(user, 'email') ? (user.email ?? null) : undefined;
 		this._emailBounced = hasKey(user, 'email_bounced') ? user.email_bounced : undefined;
@@ -378,6 +380,8 @@ export class User {
 			flags: u.flags ?? this.flags,
 			mention_flags: hasKey(u, 'mention_flags') ? u.mention_flags : this.mentionFlags || undefined,
 		};
+		const nodeOwner = pickField(this.vortexNodeOwner, u, 'vortex_node_owner', opts);
+		if (nodeOwner !== undefined) result.vortex_node_owner = nodeOwner;
 		const isStaff = pickField(this._isStaff, u, 'is_staff', opts);
 		if (isStaff !== undefined) result.is_staff = isStaff;
 		const avatarColor = pickField(this.avatarColor, u, 'avatar_color', opts);
@@ -585,6 +589,7 @@ export class User {
 			this.flags === other.flags &&
 			this.mentionFlags === other.mentionFlags &&
 			this._isStaff === other._isStaff &&
+			this.vortexNodeOwner === other.vortexNodeOwner &&
 			this._email === other._email &&
 			this._emailBounced === other._emailBounced &&
 			this._accountLimited === other._accountLimited &&
@@ -644,6 +649,7 @@ export class User {
 			if (value !== undefined) privateFields[key as string] = value;
 		};
 		setOptional('is_staff', this._isStaff);
+		setOptional('vortex_node_owner', this.vortexNodeOwner);
 		setOptional('email', this._email);
 		setOptional('email_bounced', this._emailBounced);
 		setOptional('account_limited', this._accountLimited);

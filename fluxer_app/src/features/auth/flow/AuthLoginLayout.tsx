@@ -118,7 +118,7 @@ export interface AuthLoginLayoutProps {
 	readonly forgotPasswordAction?: ReactNode;
 	readonly showTitle?: boolean;
 	readonly title?: ReactNode;
-	readonly registerLink: ReactElement<Record<string, unknown>>;
+	readonly registerLink: ReactElement<Record<string, unknown>> | null;
 	readonly onLoginComplete?: ((payload: LoginSuccessPayload) => Promise<void> | void) | null;
 	readonly onBackActionChange?: ((action: (() => void) | null) => void) | null;
 	readonly completeLoginRedirectPath: string | null;
@@ -859,7 +859,7 @@ export const AuthLoginLayout = observer(function AuthLoginLayout({
 				leadingAction={renderOldAppSignIn()}
 				disabled={passkeyControlsDisabled || isStartingSso}
 				passkeyAvailableForInstance={isPasskeyAvailableForCurrentClient(resolvedAuthRuntimeSnapshot)}
-				registerLink={registerLink}
+				registerLink={resolvedAuthRuntimeSnapshot?.registration.mode === 'open' ? registerLink : null}
 				showBrowserOption={resolveShouldOfferBrowserStep() && resolvedAuthRuntimeSnapshot != null}
 				showPasskeyOption={showPasskeyOption}
 				onBrowserLogin={handleShowBrowserStep}

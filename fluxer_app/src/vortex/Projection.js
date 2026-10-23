@@ -42,7 +42,7 @@ export function userView(ids,user,privateData) {
   const result={id:ids.get('user',user.id),username:user.username,discriminator:'0',global_name:user.display||user.username,
     avatar:null,avatar_color:null,bot:false,system:false,flags:0,traits:['premium'],premium_badge_hidden:true};
   if(!privateData)return result;
-  return {...result,is_staff:false,acls:[],email:null,has_verified_phone:false,bio:null,pronouns:null,accent_color:null,
+  return {...result,vortex_node_owner:privateData.owner===true,is_staff:false,acls:[],email:null,has_verified_phone:false,bio:null,pronouns:null,accent_color:null,
     banner:null,banner_color:null,mfa_enabled:privateData.totp,verified:true,premium_type:0,premium_since:null,premium_until:null,
     premium_will_cancel:false,premium_billing_cycle:null,premium_lifetime_sequence:null,premium_grace_ends_at:null,
     premium_discriminator:false,premium_badge_hidden:true,premium_badge_masked:false,premium_badge_timestamp_hidden:true,
@@ -56,7 +56,7 @@ export function channelView(ids,state,room) {
   const events=state.messages.get(room.id)||[];
   const last=events.filter(e=>e.payload?.type==='message').at(-1);
   return {id:ids.get('channel',room.id),guild_id:room.space?ids.get('guild',room.space):undefined,
-    type:room.space?(room.meta.category===true?4:room.kind==='voice'?2:0):(room.kind==='dm'?1:3),name:room.meta.name,topic:room.meta.topic||null,
+    type:room.space?(room.meta.category===true?4:room.kind==='voice'?2:room.meta.announcement===true?5:0):(room.kind==='dm'?1:3),name:room.meta.name,topic:room.meta.topic||null,
     parent_id:room.meta.parent&&state.rooms.some(parent=>parent.id===room.meta.parent&&parent.space===room.space&&parent.meta.category===true)?ids.get('channel',room.meta.parent):null,position:room.meta.position||0,nsfw:room.meta.nsfw===true,rate_limit_per_user:0,permission_overwrites:[],
     bitrate:room.audio*1000,user_limit:0,owner_id:ids.get('user',room.creator),icon:null,
     recipients:room.space?undefined:room.meta.members.filter(id=>id!==state.me.id).map(id=>userView(ids,state.users.find(u=>u.id===id)||state.formerUsers?.find(u=>u.id===id)||{id,username:'deleted-user'})),
@@ -68,7 +68,7 @@ export function guildView(ids,state,space) {
   const channels=state.rooms.filter(room=>room.space===space.id);
   const id=ids.get('guild',space.id);
   const memberIds=[...new Set([space.creator,...channels.flatMap(room=>room.meta.members)])];
-  return {id,properties:{id,name:channels[0]?.meta.spaceName||'Space',icon:null,banner:null,owner_id:ids.get('user',space.creator),
+  return {id,properties:{id,name:channels[0]?.meta.spaceName||'Server',icon:null,banner:null,owner_id:ids.get('user',space.creator),
     vanity_url_code:null,system_channel_id:null,features:['VOICE_E2EE','ANIMATED_ICON','ANIMATED_BANNER','BANNER','AUDIO_BITRATE_128_KBPS'],
     verification_level:0,mfa_level:0,explicit_content_filter:0,default_message_notifications:1},
     channels:channels.map(room=>channelView(ids,state,room)),roles:[{id,name:'@everyone',color:0,hoist:false,position:0,
@@ -76,7 +76,7 @@ export function guildView(ids,state,space) {
     members:memberIds.map(userId=>({user:userView(ids,state.users.find(u=>u.id===userId)||{id:userId,username:'deleted-user'}),
       roles:[],joined_at:new Date(0).toISOString(),mute:false,deaf:false})),
     member_count:memberIds.length,online_count:memberIds.filter(userId=>state.users.find(u=>u.id===userId)?.status==='online').length,
-    emojis:[],stickers:[],voice_states:[],presences:[],joined_at:new Date(0).toISOString()};
+    emojis:(state.vortexEmojis||[]).filter(emoji=>emoji.space===space.id&&emoji.catalog===true).map(({space,file,catalog,...emoji})=>emoji),stickers:[],voice_states:[],presences:[],joined_at:new Date(0).toISOString()};
 }
 
 export function materializeMessages(state,room,events=state.messages.get(room.id)||[]) {
@@ -84,7 +84,7 @@ export function materializeMessages(state,room,events=state.messages.get(room.id
   const canModerate=id=>id===room.creator||(room.moderators||[]).includes(id);
   for(const event of [...events].sort((a,b)=>a.seq-b.seq)) {
     const payload=event.payload;
-    if(payload.type==='message') {messages.set(event.id,{...event,payload:{...payload},reactions:new Map()});continue;}
+    if(payload.type==='message') {messages.set(event.id,{...event,payload:{...payload},reactions:new Map(),reactionMedia:new Map()});continue;}
     const target=messages.get(payload.target);if(!target)continue;
     if(payload.type==='edit'&&event.sender===target.sender&&typeof payload.text==='string') {
       target.payload.text=payload.text;target.editedAt=event.at;
@@ -92,6 +92,7 @@ export function materializeMessages(state,room,events=state.messages.get(room.id
       target.deleted=true;
     } else if(payload.type==='pin'&&(!room.space||canModerate(event.sender)))target.pinned=!!payload.enabled;
     else if(payload.type==='reaction'&&typeof payload.emoji==='string'&&payload.emoji.length<=256) {
+      if(payload.emoji.startsWith('custom:')&&payload.emojiFile)target.reactionMedia.set(payload.emoji,{file:payload.emojiFile,name:payload.emojiName});
       let people=target.reactions.get(payload.emoji);
       if(!people){people=new Set();target.reactions.set(payload.emoji,people);}
       payload.remove?people.delete(event.sender):people.add(event.sender);

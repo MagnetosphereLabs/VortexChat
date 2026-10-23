@@ -697,6 +697,7 @@ async function createRoom(t, A = {}) {
       name: i,
       spaceName: o,
       category: A.category===true,
+      announcement: A.announcement===true,
       parent: A.parent||null
     },
     c = [...new Set([state.me.id, ...e.filter(d => d !== state.me.id)])],
@@ -748,7 +749,8 @@ async function removeMembers(t, A) {
   });
 }
 async function upload(t, A) {
-  const limit = state.me.policy.maxUpload || 100 * 1024 ** 3;
+  const current = await action('me');
+  const limit = current.limits?.maxUpload ?? (current.policy.maxUpload || 100 * 1024 ** 3);
   if (t.size > limit) throw Error('This Node allows files up to ' + formatBytes(limit) + '.');
   let i = Math.max(1, Math.ceil(t.size / 1048576)),
     n = await fetch(state.pair.url + "/chat/objects", {
@@ -866,13 +868,13 @@ async function loadHistory(room, before) {
   });
 }
 // Read the authenticated archive without advancing or rewinding the live MLS state.
-async function* archiveEvents(room,signal) {
-  let after=0,ceiling=null;
+async function* archiveEvents(room,signal,options={}) {
+  let after=options.after||0,ceiling=null;
   const keys=await roomKeys(room);
   while(true) {
     signal?.throwIfAborted();
     if(state.closed)throw new Error('Sign in to read this conversation');
-    const page=await action('events',{room:room.id,after,archive:true});
+    const page=await action('events',{room:room.id,after,archive:true,...(options.catalog?{catalog:true}:{})});
     ceiling??=page.cursor;
     if(!page.events.length)return;
     for(const event of page.events) {
@@ -927,7 +929,7 @@ async function inviteSpace(space, user) {
     const keys=await roomKeys(room),meta={...room.meta,members:[...new Set([...room.meta.members,user])]};
     rooms.push({room:room.id,creator:room.creator,base:room.sealed,box:await wrapKey(user,enc.encode(JSON.stringify(keys.bundle)),room.id),sealed:b64(await seal(keys.key,enc.encode(JSON.stringify(meta)),room.id))});
   }
-  const label=await wrapKey(user,enc.encode(JSON.stringify({name:channels[0].meta.spaceName||'Space'})),id),body={rooms,label};
+  const label=await wrapKey(user,enc.encode(JSON.stringify({name:channels[0].meta.spaceName||'Server'})),id),body={rooms,label};
   body.signature=await sign(invitationSignature(id,space,user,rooms,label));
   await action('space.invite',{id,space,user,body});return id;
 }
@@ -957,7 +959,7 @@ async function respondInvitation(id,accept) {
   if(accept){state.prefs.conversations??={};Object.assign(state.prefs.conversations,pins);await savePreferences();await sync();}
 }
 async function updateMetadata(room,patch) {
-  const allowed=['name','topic','position','spaceName','parent','nsfw'];
+  const allowed=['name','topic','position','spaceName','parent','nsfw','announcement'];
   const meta={...room.meta};for(const key of allowed)if(patch[key]!==undefined)meta[key]=patch[key];
   const keys=await roomKeys(room);
   await action('room.metadata',{room:room.id,sealed:b64(await seal(keys.key,enc.encode(JSON.stringify(meta)),room.id))});

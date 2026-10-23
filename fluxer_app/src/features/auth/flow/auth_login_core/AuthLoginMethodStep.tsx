@@ -49,7 +49,7 @@ interface AuthLoginMethodStepProps {
 	readonly identifierField: LoginIdentifierField;
 	readonly leadingAction: ReactNode;
 	readonly passkeyAvailableForInstance: boolean;
-	readonly registerLink: ReactElement<Record<string, unknown>>;
+	readonly registerLink: ReactElement<Record<string, unknown>> | null;
 	readonly showBrowserOption: boolean;
 	readonly showPasskeyOption: boolean;
 	readonly showTitle: boolean;
@@ -81,13 +81,13 @@ export function AuthLoginMethodStep({
 	onBackToInstance,
 }: AuthLoginMethodStepProps) {
 	const {i18n} = useLingui();
-	const registerLinkProps = registerLink.props;
-	const registerLinkClassNameValue = registerLinkProps['className'];
+	const registerLinkProps = registerLink?.props;
+	const registerLinkClassNameValue = registerLinkProps?.['className'];
 	let registerLinkClassName: string | null = null;
 	if (typeof registerLinkClassNameValue === 'string') {
 		registerLinkClassName = registerLinkClassNameValue;
 	}
-	const methodRegisterLink = cloneElement(registerLink, {
+	const methodRegisterLink = registerLink ? cloneElement(registerLink, {
 		className: clsx(styles.methodChoiceLink, registerLinkClassName),
 		children: (
 			<>
@@ -97,7 +97,7 @@ export function AuthLoginMethodStep({
 				</span>
 			</>
 		),
-	});
+	}) : null;
 	const secondaryActions: Array<AuthLoginMethodAction> = [];
 	if (identifierField !== 'login' && resolveShowPasskeyAction(showPasskeyOption, passkeyAvailableForInstance)) {
 		secondaryActions.push({

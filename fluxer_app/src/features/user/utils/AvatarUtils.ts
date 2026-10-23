@@ -10,6 +10,8 @@ import {
 } from '@app/features/messaging/utils/MediaProxyUtils';
 import {mediaUrl, setPathQueryParams} from '@app/features/messaging/utils/MessagingUrlUtils';
 import type {User} from '@app/features/user/models/User';
+import Users from '@app/features/user/state/Users';
+import {getEmojiMedia} from '@app/vortex/EmojiMedia.js';
 import avatar0 from '@app/media/images/avatars/0.png';
 import avatar1 from '@app/media/images/avatars/1.png';
 import avatar2 from '@app/media/images/avatars/2.png';
@@ -507,6 +509,10 @@ const EMOJI_URL_CACHE = new Map<string, string>();
 const EMOJI_URL_CACHE_LIMIT = 4096;
 
 export function getEmojiURL({id, animated, isAnimatable}: {id: string; animated?: boolean; isAnimatable?: boolean}) {
+	const endpoint = RuntimeConfig.getSnapshotOrNull()?.apiEndpoint;
+	if (endpoint?.endsWith('/vortex/api')) {
+		return getEmojiMedia(id, new URL(endpoint).origin, Users.getCurrentUser()?.id) || '';
+	}
 	const animatedFlag = isAnimatable === false ? false : animated === true;
 	const key = `${mediaURLCacheScope()}:${animatedFlag ? 'a' : 's'}:${id}`;
 	const cached = EMOJI_URL_CACHE.get(key);

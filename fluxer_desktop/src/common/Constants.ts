@@ -10,8 +10,8 @@ import {
 
 export const CHANNEL_APP_PROTOCOLS: Record<BuildChannel, string> = {
 	stable: 'vortexchat',
-	canary: 'vortexchat',
-	development: 'fluxer-development',
+	canary: 'vortexchat-preview',
+	development: 'vortexchat-development',
 };
 export const APP_PROTOCOL = CHANNEL_APP_PROTOCOLS[BUILD_CHANNEL];
 export const STABLE_APP_URL = 'https://web.fluxer.app';

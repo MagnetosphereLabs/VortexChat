@@ -33,7 +33,7 @@ const CHANNELS = {
 		linuxPackageName: 'fluxer-canary',
 		linuxDesktopId: 'app.fluxer.FluxerDesktopCanary',
 		linuxComment: 'Canary build of Fluxer',
-		protocolScheme: 'vortexchat',
+		protocolScheme: 'vortexchat-preview',
 		macEntitlements: 'build_resources/entitlements.mac.canary.plist',
 		notarize: true,
 		provisioningProfile: 'build_resources/profiles/Fluxer_Canary.provisionprofile',
@@ -48,7 +48,7 @@ const CHANNELS = {
 		linuxPackageName: 'fluxer-development',
 		linuxDesktopId: 'app.fluxer.FluxerDesktopDevelopment',
 		linuxComment: 'Development build of Fluxer',
-		protocolScheme: 'fluxer-development',
+		protocolScheme: 'vortexchat-development',
 		macEntitlements: 'build_resources/entitlements.mac.development.plist',
 		notarize: false,
 		provisioningProfile: null,
@@ -84,7 +84,7 @@ const linuxOptDirName = channel.linuxOptDirName;
 const installedProductName = isLinuxBuild ? linuxOptDirName : productName;
 const artifactProductName = channel.artifactProductName;
 const appId = channel.appId;
-const iconDir = channel.iconDirectory;
+const iconDir = isLinuxBuild ? 'icons-vortex' : channel.iconDirectory;
 const packageName = channel.packageName;
 const linuxPackageName = channel.linuxPackageName;
 const linuxDesktopId = channel.linuxDesktopId;
@@ -1702,7 +1702,7 @@ module.exports = {
 			],
 		},
 		{
-			from: `build_resources/${iconDir}/badges/`,
+			from: `build_resources/${channel.iconDirectory}/badges/`,
 			to: 'badges',
 			filter: ['**/*'],
 		},
@@ -1789,7 +1789,7 @@ module.exports = {
 			x64ArchFiles: '**/@fluxer/**/*.node',
 		},
 		minimumSystemVersion: macOSMinimumSystemVersion,
-		icon: `build_resources/${iconDir}/_compiled/AppIcon.icns`,
+		icon: `build_resources/${channel.iconDirectory}/_compiled/AppIcon.icns`,
 		darkModeSupport: true,
 		notarize: channel.notarize,
 		sign: {
@@ -1834,7 +1834,7 @@ module.exports = {
 		],
 	},
 	win: {
-		icon: `build_resources/${iconDir}/icon.ico`,
+		icon: `build_resources/${channel.iconDirectory}/icon.ico`,
 		target: winTargets,
 	},
 	linux: {

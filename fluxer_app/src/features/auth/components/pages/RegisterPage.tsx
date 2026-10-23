@@ -1,31 +1,32 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type {RuntimeConfigSnapshot} from '@app/features/app/state/InstanceSnapshotStore';
-import {usesUsernameSignIn} from '@app/features/app/utils/AccountIdentityFeatures';
-import {AuthBottomLink} from '@app/features/auth/flow/AuthBottomLink';
+import { readRegistrationUrlCode } from '@app/features/auth/flow/RegisterFormFields';
+import type { RuntimeConfigSnapshot } from '@app/features/app/state/InstanceSnapshotStore';
+import { usesUsernameSignIn } from '@app/features/app/utils/AccountIdentityFeatures';
+import { AuthBottomLink } from '@app/features/auth/flow/AuthBottomLink';
 import sharedStyles from '@app/features/auth/flow/AuthPageStyles.module.css';
-import {AuthRegisterFormCore} from '@app/features/auth/flow/AuthRegisterFormCore';
-import {AuthRuntimeTargetGate} from '@app/features/auth/flow/AuthRuntimeTargetGate';
-import {AuthSsoPanel, isSsoLoginEnforced, resolveAuthPanelSso} from '@app/features/auth/flow/AuthSsoPanel';
-import {AUTH_LOGIN_METHOD_QUERY_PARAM} from '@app/features/auth/flow/auth_login_core/AuthLoginStepTypes';
-import {AuthClientPermissionStep} from '@app/features/auth/flow/client_intro/AuthClientPermissionStep';
-import {AuthClientPreferencesStep} from '@app/features/auth/flow/client_intro/AuthClientPreferencesStep';
-import {useDesktopClientIntroFlow} from '@app/features/auth/flow/client_intro/useDesktopClientIntroFlow';
-import {credentialRegisterFields} from '@app/features/auth/flow/RegisterFormFields';
-import {useAuthPresentation} from '@app/features/auth/flow/useAuthPresentation';
-import {AuthCardVariant} from '@app/features/auth/state/AuthLayoutContext';
-import {useAuthRuntimeTarget} from '@app/features/auth/state/AuthRuntimeTarget';
-import {safeRedirectTarget} from '@app/features/auth/utils/SafeRedirect';
-import {REGISTER_DESCRIPTOR} from '@app/features/i18n/utils/CommonMessageDescriptors';
-import {setPathQueryParams} from '@app/features/messaging/utils/MessagingUrlUtils';
-import type {PermissionKind} from '@app/features/permissions/system/utils/NativePermissions';
-import {useLocation} from '@app/features/platform/components/router/RouterReact';
-import {SteppedCarousel} from '@app/features/ui/stepped_carousel/SteppedCarousel';
-import {isDesktop} from '@app/features/ui/utils/NativeUtils';
-import {useFluxerDocumentTitle} from '@app/features/window/hooks/useFluxerDocumentTitle';
-import {Trans, useLingui} from '@lingui/react/macro';
-import {observer} from 'mobx-react-lite';
-import type {ReactNode} from 'react';
+import { AuthRegisterFormCore } from '@app/features/auth/flow/AuthRegisterFormCore';
+import { AuthRuntimeTargetGate } from '@app/features/auth/flow/AuthRuntimeTargetGate';
+import { AuthSsoPanel, isSsoLoginEnforced, resolveAuthPanelSso } from '@app/features/auth/flow/AuthSsoPanel';
+import { AUTH_LOGIN_METHOD_QUERY_PARAM } from '@app/features/auth/flow/auth_login_core/AuthLoginStepTypes';
+import { AuthClientPermissionStep } from '@app/features/auth/flow/client_intro/AuthClientPermissionStep';
+import { AuthClientPreferencesStep } from '@app/features/auth/flow/client_intro/AuthClientPreferencesStep';
+import { useDesktopClientIntroFlow } from '@app/features/auth/flow/client_intro/useDesktopClientIntroFlow';
+import { credentialRegisterFields } from '@app/features/auth/flow/RegisterFormFields';
+import { useAuthPresentation } from '@app/features/auth/flow/useAuthPresentation';
+import { AuthCardVariant } from '@app/features/auth/state/AuthLayoutContext';
+import { useAuthRuntimeTarget } from '@app/features/auth/state/AuthRuntimeTarget';
+import { safeRedirectTarget } from '@app/features/auth/utils/SafeRedirect';
+import { REGISTER_DESCRIPTOR } from '@app/features/i18n/utils/CommonMessageDescriptors';
+import { setPathQueryParams } from '@app/features/messaging/utils/MessagingUrlUtils';
+import type { PermissionKind } from '@app/features/permissions/system/utils/NativePermissions';
+import { useLocation } from '@app/features/platform/components/router/RouterReact';
+import { SteppedCarousel } from '@app/features/ui/stepped_carousel/SteppedCarousel';
+import { isDesktop } from '@app/features/ui/utils/NativeUtils';
+import { useFluxerDocumentTitle } from '@app/features/window/hooks/useFluxerDocumentTitle';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { observer } from 'mobx-react-lite';
+import type { ReactNode } from 'react';
 
 const RegisterPageStep = Object.freeze({
 	PREFERENCES: 'preferences',
@@ -62,8 +63,8 @@ interface RegisterPageContentProps {
 	readonly runtimeSnapshot: RuntimeConfigSnapshot;
 }
 
-const RegisterPageContent = observer(function RegisterPageContent({runtimeSnapshot}: RegisterPageContentProps) {
-	const {i18n} = useLingui();
+const RegisterPageContent = observer(function RegisterPageContent({ runtimeSnapshot }: RegisterPageContentProps) {
+	const { i18n } = useLingui();
 	const runtimeTarget = useAuthRuntimeTarget();
 	const location = useLocation();
 	const params = new URLSearchParams(location.search);
@@ -74,9 +75,19 @@ const RegisterPageContent = observer(function RegisterPageContent({runtimeSnapsh
 		redirect_to: safeRedirect,
 		[AUTH_LOGIN_METHOD_QUERY_PARAM.name]: AUTH_LOGIN_METHOD_QUERY_PARAM.value,
 	});
-	const clientIntro = useDesktopClientIntroFlow(isDesktop(), {skipWelcome: true});
+	const clientIntro = useDesktopClientIntroFlow(isDesktop(), { skipWelcome: true });
 	const registerStep = selectRegisterPageStep(clientIntro.showPreferences, clientIntro.permission);
 	const usernameSignIn = usesUsernameSignIn(runtimeSnapshot.features);
+	if (runtimeSnapshot.registration.mode === 'closed' && !readRegistrationUrlCode(params)) {
+		return (
+			<div className={sharedStyles.container}>
+				<h1 className={sharedStyles.title}>This Node requires an invitation</h1>
+				<p>Ask the administrator of {new URL(runtimeSnapshot.apiEndpoint).host} for a Vortex Chat registration link.</p>
+				<AuthBottomLink variant="login" to={loginPath} />
+			</div>
+		);
+	}
+
 	if (isSsoEnforcedForSnapshot(runtimeSnapshot)) {
 		return (
 			<div className={sharedStyles.container} data-flx="auth.register-page.register-page-content.sso-container">
@@ -113,9 +124,10 @@ const RegisterPageContent = observer(function RegisterPageContent({runtimeSnapsh
 		return (
 			<>
 				<h1 className={sharedStyles.title} data-flx="auth.register-page.register-page-content.h1">
-					<Trans>Create an account</Trans>
+					<Trans>Create a Vortex Chat account</Trans>
 				</h1>
 				<div className={sharedStyles.container} data-flx="auth.register-page.register-page-content.div">
+					<p>Connected to {new URL(runtimeSnapshot.apiEndpoint).host}</p>
 					<AuthRegisterFormCore
 						fields={credentialRegisterFields(usernameSignIn)}
 						submitLabel={<Trans>Create account</Trans>}
@@ -147,9 +159,9 @@ const RegisterPageContent = observer(function RegisterPageContent({runtimeSnapsh
 	);
 });
 const RegisterPage = observer(function RegisterPage() {
-	const {i18n} = useLingui();
+	const { i18n } = useLingui();
 	useFluxerDocumentTitle(i18n._(REGISTER_DESCRIPTOR));
-	useAuthPresentation({variant: AuthCardVariant.STANDARD});
+	useAuthPresentation({ variant: AuthCardVariant.STANDARD });
 	return (
 		<AuthRuntimeTargetGate data-flx="auth.register-page.runtime-target-gate">
 			{(runtimeSnapshot) => (

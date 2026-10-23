@@ -16,7 +16,7 @@ export function buildCustomEmojiURL({
 	size?: number;
 }): string {
 	const base = AvatarUtils.getEmojiURL({id, animated});
-	if (!base) {
+	if (!base || base.startsWith('blob:')) {
 		return base;
 	}
 	return setUrlQueryParams(base, {size});

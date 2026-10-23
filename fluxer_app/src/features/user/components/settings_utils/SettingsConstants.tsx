@@ -142,7 +142,7 @@ export function getCategoryLabel(category: UserSettingsTabCategories): React.Rea
 }
 
 const ALL_TABS_DESCRIPTORS: Array<SettingsTabDescriptor> = [
-	{type: 'vortex_node', category: 'user_settings', label: 'Vortex Node', icon: ShieldIcon},
+	{type: 'vortex_node', category: 'app_settings', label: 'Node management', icon: ShieldIcon},
 	{
 		type: 'my_profile',
 		category: 'user_settings',
@@ -343,6 +343,7 @@ export const getSettingsTabs = (i18n: I18n): Array<SettingsTab> => {
 	const showPremium = shouldShowPremiumFeatures();
 	const showClaimedAccountUi = shouldShowClaimedAccountUi();
 	return allTabs.filter((tab) => {
+		if (tab.type === 'vortex_node' && Users.getCurrentUser()?.vortexNodeOwner !== true) return false;
 		if (!showClaimedAccountUi && (tab.type === 'my_profile' || tab.type === 'linked_accounts')) {
 			return false;
 		}

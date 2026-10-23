@@ -45,12 +45,12 @@ describe('installed channels stay apart', () => {
 
 	test('the development app registers its own deep link scheme instead of fluxer://', () => {
 		const schemes = configs.development.protocols.flatMap((protocol) => protocol.schemes);
-		assert.deepEqual(schemes, ['fluxer-development']);
-		assert.equal(configs.development.linux.desktop.entry.MimeType, 'x-scheme-handler/fluxer-development;');
+		assert.deepEqual(schemes, ['vortexchat-development']);
+		assert.equal(configs.development.linux.desktop.entry.MimeType, 'x-scheme-handler/vortexchat-development;');
 		for (const channel of ['stable', 'canary']) {
 			assert.deepEqual(
 				configs[channel].protocols.flatMap((protocol) => protocol.schemes),
-				['fluxer'],
+				[channel === 'stable' ? 'vortexchat' : 'vortexchat-preview'],
 			);
 		}
 	});

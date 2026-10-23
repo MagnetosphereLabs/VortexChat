@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { useAuthRuntimeTarget } from '@app/features/auth/state/AuthRuntimeTarget';
 import loginStyles from '@app/features/auth/components/pages/LoginPage.module.css';
 import AuthLoginEmailPasswordForm, {
 	type AuthFormControllerLike,
 } from '@app/features/auth/flow/auth_login_core/AuthLoginEmailPasswordForm';
-import type {ReactNode} from 'react';
+import type { ReactNode } from 'react';
 
 interface AuthLoginCredentialStepPanelProps {
 	readonly disableSubmit?: boolean;
@@ -37,6 +38,7 @@ export function AuthLoginCredentialStepPanel({
 	switchError,
 	title,
 }: AuthLoginCredentialStepPanelProps) {
+	const node = useAuthRuntimeTarget().snapshot;
 	const renderSwitchError = (): ReactNode => {
 		if (switchError == null || switchError.length === 0) {
 			return null;
@@ -62,13 +64,14 @@ export function AuthLoginCredentialStepPanel({
 					{title}
 				</h1>
 			) : null}
+			{node && <p className={loginStyles.loginNotice}>Vortex Chat · {new URL(node.apiEndpoint).host}</p>}
 			{renderSwitchError()}
 			<AuthLoginEmailPasswordForm
 				form={form}
 				isLoading={isLoading}
 				fieldErrors={fieldErrors}
 				submitLabel={submitLabel}
-				classes={{form: loginStyles.form}}
+				classes={{ form: loginStyles.form }}
 				linksWrapperClassName={loginStyles.formLinks}
 				links={forgotPasswordLink}
 				identifierField={identifierField}

@@ -4,16 +4,17 @@ import {createVortexCore} from './Core.js';
 import {registerAttachment,registerAttachmentAlias,unregisterAttachments} from './AttachmentDownloads.js';
 import {VortexIds,channelView,guildView,userView,materializeMessages} from './Projection.js';
 import {userSettingsView} from './UserSettingsView.js';
+import {setEmojiMedia,clearEmojiMedia,emojiName,messageEmojiFiles,messageEmojiEntries,validEmojiFile} from './EmojiMedia.js';
 
 export class VortexSession {
-  ids=new VortexIds();listeners=new Set();attachmentUrls=new Map();attachmentReferences=new Map();previewBytes=0;voice=null;
+  catalogs=new Map();ids=new VortexIds();listeners=new Set();attachmentUrls=new Map();attachmentReferences=new Map();previewBytes=0;voice=null;
   constructor(pair) {
     this.pair=pair;
     this.core=createVortexCore({notice:message=>this.emit('VORTEX_NOTICE',{message}),mediaEpochChanged:()=>this.updateMediaEpoch()});
   }
   async open() {await this.core.connect(this.pair,await auth.restoreRoot(this.pair));await this.refresh();return this;}
   emit(type,data){for(const listener of this.listeners)listener(type,data);}
-  async refresh(fresh=false) {await this.core.sync(fresh);await this.ids.index(this.core.state);}
+  async refresh(fresh=false) {await this.core.sync(fresh);await this.ids.index(this.core.state);await this.hydrateEmojis();}
   currentUser(){const s=this.core.state;return userView(this.ids,s.users.find(u=>u.id===s.me.id)||s.me,s.me);}
   visibleRoom(room) {
     const closed=this.core.state.prefs.closedDms?.[room.id];
@@ -33,6 +34,60 @@ export class VortexSession {
       read_states:state.rooms.flatMap(room=>{const id=state.prefs.read?.[room.id];if(!id)return [];try{return [{id:this.ids.get('channel',room.id),last_message_id:this.ids.get('message',id),mention_count:0}];}catch{return [];}}),
       user_guild_settings:Object.values(state.prefs.guildSettings||{}),presences:state.users.map(user=>({user:{id:this.ids.get('user',user.id)},status:user.status||'offline',activities:[]})),
       rtc_regions:[],notes:state.prefs.notes||{},pinned_dms:state.prefs.pinnedDms||[],favorite_memes:[],webauthn_credentials:[]};
+  }
+  async emoji(entry, space='') {
+    const file=entry?.file;
+    if(!validEmojiFile(file))return null;
+    const image=await this.attachment(file);
+    const id=await this.ids.add('emoji',file.id),name=emojiName(entry.name);
+    // Failed or over-budget previews retain a readable :name: fallback.
+    if(!image.proxy_url.startsWith('blob:'))return null;
+    setEmojiMedia(this,id,image.proxy_url);
+    const emoji={id,name,catalog:entry.catalog===true,nsfw:false,user:userView(this.ids,this.core.state.users.find(user=>user.id===entry.creator)||this.core.state.me),animated:file.type==='image/gif',available:true,managed:false,require_colons:true,roles:[],space,file};
+    this.core.state.vortexEmojis??=[];
+    const known=this.core.state.vortexEmojis.findIndex(item=>item.id===id);
+    if(known<0&&!this.core.state.vortexEmojiRemoved?.has(file.id))this.core.state.vortexEmojis.push(emoji);else if(known>=0) this.core.state.vortexEmojis[known]=emoji;
+    return emoji;
+  }
+  async hydrateEmojis() {
+    const state=this.core.state,entries=new Map();
+    for(const entry of (Array.isArray(state.prefs.emoji)?state.prefs.emoji:[]))if(entry.file?.id)entries.set(entry.file.id,{...entry,catalog:true});
+    const removed=new Set(), archived=[];
+    const currentRooms=new Set(state.rooms.map(room=>room.id));
+    for(const id of this.catalogs.keys())if(!currentRooms.has(id))this.catalogs.delete(id);
+    for(const room of state.rooms.filter(room=>room.space)) {
+      let catalog=this.catalogs.get(room.id);
+      if(!catalog){catalog={after:0,seen:-1,entries:new Map()};this.catalogs.set(room.id,catalog);}
+      if(catalog.seen!==(state.cursors[room.id]||0)) {
+        try {
+          for await(const event of this.core.archiveEvents(room,undefined,{catalog:true,after:catalog.after})) {
+            catalog.after=event.seq;
+            if(event.kind!=='emoji')continue;
+            const key=event.payload?.file?.id||event.payload?.fileId;
+            if(key)catalog.entries.set(key,{room,event:{seq:event.seq,kind:event.kind,sender:event.sender,payload:event.payload}});
+          }
+          catalog.seen=state.cursors[room.id]||0;
+        } catch {
+          // A damaged optional catalog must not prevent account sign-in or
+          // replace a previously authenticated image with unverified content.
+          catalog.seen=state.cursors[room.id]||0;
+        }
+      }
+      archived.push(...catalog.entries.values());
+    }
+    const events=[...archived,...state.rooms.flatMap(room=>(state.messages.get(room.id)||[]).map(event=>({room,event})))].sort((a,b)=>a.event.seq-b.event.seq);
+    for(const {room,event} of events) {
+      const p=event.payload;
+      if(event.kind==='emoji'&&p?.type==='emoji.remove')removed.add(p.fileId);
+      if(event.kind==='emoji'&&p?.type==='emoji'&&p.file?.id){removed.delete(p.file.id);entries.set(p.file.id,{catalog:true,name:p.name,file:{...p.file,room:p.file.room||room.id},space:room.space,creator:event.sender});}
+      for(const entry of [p?.emoji,...messageEmojiEntries(p),...(p?.emojiFile?[{name:p.emojiName,file:p.emojiFile}]:[])])if(entry?.file?.id&&!entries.has(entry.file.id))entries.set(entry.file.id,{...entry,file:{...entry.file,room:entry.file.room||room.id},space:room.space,creator:event.sender});
+    }
+    state.vortexEmojiRemoved=removed;
+    state.vortexEmojis=[];
+    // Bound work and image memory for large legacy catalogs.
+    for(const entry of [...entries.values()].filter(entry=>!removed.has(entry.file.id)).slice(0,1024)) {
+      try {await this.emoji(entry,entry.space);}catch{}
+    }
   }
   async attachment(file) {
     let reference=this.attachmentReferences.get(file.id);
@@ -62,9 +117,22 @@ export class VortexSession {
     const result={id:this.ids.messageId(event),channel_id:this.ids.get('channel',room.id),guild_id:room.space?this.ids.get('guild',room.space):undefined,
       author:userView(this.ids,state.users.find(u=>u.id===event.sender)||state.formerUsers?.find(u=>u.id===event.sender)||{id:event.sender,username:'deleted-user'}),
       content:payload.text||'',timestamp:new Date(event.at*1000).toISOString(),edited_timestamp:event.editedAt?new Date(event.editedAt*1000).toISOString():null,
-      type:payload.reply?19:0,tts:false,mention_everyone:false,mentions:[],mention_roles:[],attachments:attachments?await Promise.all((payload.files||[]).map(file=>this.attachment(file))):[],
+      type:payload.reply?19:0,tts:false,mention_everyone:false,mentions:[],mention_roles:[],attachments:attachments?await Promise.all(messageEmojiFiles(payload).map(file=>this.attachment(file))):[],
       embeds:[],sticker_items:[],flags:0,pinned:!!event.pinned,nonce:payload.nonce,
       reactions:[...event.reactions||[]].filter(([,people])=>people.size).map(([name,people])=>({count:people.size,me:people.has(state.me.id),emoji:{id:null,name,animated:false}}))};
+    for(const entry of messageEmojiEntries(payload))await this.emoji(entry,room.space).catch(()=>null);
+    if(payload.emoji) {
+      const emoji=await this.emoji(payload.emoji,room.space).catch(()=>null);
+      const label=emoji?`<${emoji.animated?'a':''}:${emoji.name}:${emoji.id}>`:`:${emojiName(payload.emoji.name)}:`;
+      result.content=[result.content,label].filter(Boolean).join(' ');
+      // Inline emoji uses the same decrypted attachment preview; avoid a second full-size image.
+      if(emoji)result.attachments=result.attachments.filter(file=>file.id!==this.ids.get('attachment',payload.emoji.file.id));
+    }
+    result.reactions=await Promise.all([...event.reactions||[]].filter(([,people])=>people.size).map(async([key,people])=>{
+      const entry=event.reactionMedia?.get(key);
+      const emoji=entry?await this.emoji(entry,room.space).catch(()=>null):null;
+      return {count:people.size,me:people.has(state.me.id),emoji:emoji?{id:emoji.id,name:emoji.name,animated:emoji.animated}:{id:null,name:entry?`:${emojiName(entry.name)}:`:key,animated:false}};
+    }));
     const mentioned=new Set([...result.content.matchAll(/<@!?(\d+)>/gu)].map(match=>match[1]));
     result.mentions=room.meta.members.map(id=>state.users.find(user=>user.id===id)||state.formerUsers?.find(user=>user.id===id)).filter(Boolean).map(user=>userView(this.ids,user)).filter(user=>mentioned.has(user.id));
     if(payload.reply) {
@@ -92,7 +160,7 @@ export class VortexSession {
     const key=auth.b64(await this.core.mediaKey(room));
     if(key!==this.voice.key){this.voice.key=key;this.emit('VORTEX_MEDIA_KEY',{key});}
   }
-  close(){unregisterAttachments(this);this.core.close();for(const pending of this.attachmentUrls.values())pending.then(value=>URL.revokeObjectURL(value.url),()=>{});this.attachmentUrls.clear();this.attachmentReferences.clear();this.listeners.clear();}
+  close(){this.catalogs.clear();clearEmojiMedia(this);unregisterAttachments(this);this.core.close();for(const pending of this.attachmentUrls.values())pending.then(value=>URL.revokeObjectURL(value.url),()=>{});this.attachmentUrls.clear();this.attachmentReferences.clear();this.listeners.clear();}
 }
 
 const sessions=new Map();
@@ -126,7 +194,7 @@ export async function login(origin,body) {
   return {token:pair.token,user_id:session.currentUser().id,user:session.currentUser()};
 }
 export async function register(origin,body) {
-  await auth.register({url:origin,username:body.username,password:body.password,invite:body.invite_code||new URL(globalThis.location?.href||origin).searchParams.get('invite')||''});
+  await auth.register({url:origin,username:body.username,password:body.password,invite:body.registration_url_code||body.invite_code||new URL(globalThis.location?.href||origin).searchParams.get('invite')||''});
   return login(origin,body);
 }
 export async function logout(token,origin) {

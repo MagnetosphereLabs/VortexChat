@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import {createHash} from 'node:crypto';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import {HtmlRspackPlugin, sources} from '@rspack/core';
+import { HtmlRspackPlugin, sources } from '@rspack/core';
 
 const STATIC_CDN_ENDPOINT_PLACEHOLDER = '{{STATIC_CDN_ENDPOINT}}';
 
 const FONT_LICENSE_FILES = [
-	{source: 'NOTICE.md', asset: 'assets/fonts-NOTICE.txt'},
-	{source: 'LICENSE-IBM-PLEX.txt', asset: 'assets/fonts-LICENSE-IBM-PLEX.txt'},
+	{ source: 'NOTICE.md', asset: 'assets/fonts-NOTICE.txt' },
+	{ source: 'LICENSE-IBM-PLEX.txt', asset: 'assets/fonts-LICENSE-IBM-PLEX.txt' },
 ];
 
 const WASM_LICENSE_FILES = [
-	{source: 'libfluxcore/NOTICE.md', asset: 'assets/libfluxcore-NOTICE.txt'},
-	{source: 'libfluxcore/LICENSE-ZSTD.txt', asset: 'assets/libfluxcore-LICENSE-ZSTD.txt'},
-	{source: 'libfluxcore/LICENSE-ZSTD-SYS.txt', asset: 'assets/libfluxcore-LICENSE-ZSTD-SYS.txt'},
-	{source: 'libfluxcore/LICENSE-ZSTD-RS.txt', asset: 'assets/libfluxcore-LICENSE-ZSTD-RS.txt'},
-	{source: 'libfluxwebp/NOTICE.md', asset: 'assets/libfluxwebp-NOTICE.txt'},
-	{source: 'libfluxwebp/LICENSE-LIBWEBP.txt', asset: 'assets/libfluxwebp-LICENSE-LIBWEBP.txt'},
-	{source: 'libfluxwebp/PATENTS-LIBWEBP.txt', asset: 'assets/libfluxwebp-PATENTS-LIBWEBP.txt'},
-	{source: 'libfluxwebp/LICENSE-LIBWEBP-SYS.txt', asset: 'assets/libfluxwebp-LICENSE-LIBWEBP-SYS.txt'},
-	{source: 'libfluxwebp/simd/LICENSE', asset: 'assets/libfluxwebp-LICENSE-EMSCRIPTEN.txt'},
+	{ source: 'libfluxcore/NOTICE.md', asset: 'assets/libfluxcore-NOTICE.txt' },
+	{ source: 'libfluxcore/LICENSE-ZSTD.txt', asset: 'assets/libfluxcore-LICENSE-ZSTD.txt' },
+	{ source: 'libfluxcore/LICENSE-ZSTD-SYS.txt', asset: 'assets/libfluxcore-LICENSE-ZSTD-SYS.txt' },
+	{ source: 'libfluxcore/LICENSE-ZSTD-RS.txt', asset: 'assets/libfluxcore-LICENSE-ZSTD-RS.txt' },
+	{ source: 'libfluxwebp/NOTICE.md', asset: 'assets/libfluxwebp-NOTICE.txt' },
+	{ source: 'libfluxwebp/LICENSE-LIBWEBP.txt', asset: 'assets/libfluxwebp-LICENSE-LIBWEBP.txt' },
+	{ source: 'libfluxwebp/PATENTS-LIBWEBP.txt', asset: 'assets/libfluxwebp-PATENTS-LIBWEBP.txt' },
+	{ source: 'libfluxwebp/LICENSE-LIBWEBP-SYS.txt', asset: 'assets/libfluxwebp-LICENSE-LIBWEBP-SYS.txt' },
+	{ source: 'libfluxwebp/simd/LICENSE', asset: 'assets/libfluxwebp-LICENSE-EMSCRIPTEN.txt' },
 ];
 
 function resolveStaticCdnEndpoint(staticCdnEndpoint) {
@@ -30,14 +30,12 @@ function resolveStaticCdnEndpoint(staticCdnEndpoint) {
 }
 
 function generateManifest(staticCdnEndpoint) {
-	const cdn = resolveStaticCdnEndpoint(staticCdnEndpoint);
 	const manifest = {
-		name: 'Fluxer',
-		short_name: 'Fluxer',
-		description:
-			'Fluxer is a free and open source instant messaging and VoIP platform built for friends, groups, and communities.',
+		name: 'Vortex Chat',
+		short_name: 'Vortex Chat',
+		description: 'Vortex Chat is private, end-to-end encrypted communication on your self-hosted Vortex Node.',
 		id: '/',
-		start_url: '/app',
+		start_url: '/channels/@me',
 		display: 'standalone',
 		orientation: 'portrait-primary',
 		theme_color: '#4641D9',
@@ -47,33 +45,8 @@ function generateManifest(staticCdnEndpoint) {
 		scope: '/',
 		scope_extensions: [],
 		icons: [
-			{
-				src: `${cdn}/web/android-chrome-192x192.png`,
-				sizes: '192x192',
-				type: 'image/png',
-				purpose: 'maskable any',
-			},
-			{
-				src: `${cdn}/web/android-chrome-512x512.png`,
-				sizes: '512x512',
-				type: 'image/png',
-				purpose: 'maskable any',
-			},
-			{
-				src: `${cdn}/web/apple-touch-icon.png`,
-				sizes: '180x180',
-				type: 'image/png',
-			},
-			{
-				src: `${cdn}/web/favicon-32x32.png`,
-				sizes: '32x32',
-				type: 'image/png',
-			},
-			{
-				src: `${cdn}/web/favicon-16x16.png`,
-				sizes: '16x16',
-				type: 'image/png',
-			},
+			{ src: '/vortex-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+			{ src: '/vortex-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
 		],
 	};
 
@@ -109,7 +82,7 @@ export class StaticFilesPlugin {
 		if (!dir) {
 			return assetNames;
 		}
-		for (const {source, asset} of files) {
+		for (const { source, asset } of files) {
 			const sourcePath = path.join(dir, source);
 			compilation.fileDependencies.add(sourcePath);
 			if (!fs.existsSync(sourcePath)) {
@@ -135,7 +108,7 @@ export class StaticFilesPlugin {
 					data.headTags.push({
 						tagName: 'link',
 						voidTag: true,
-						attributes: {rel: 'license', href: `${data.publicPath}${fontNoticeAsset}`},
+						attributes: { rel: 'license', href: `${data.publicPath}${fontNoticeAsset}` },
 					});
 				}
 				return data;

@@ -62,11 +62,11 @@ import {
 } from 'react';
 
 const ENTER_INSTANCE_URL_E_G_DESCRIPTOR = msg({
-	message: 'Enter self-hosted instance URL (e.g. {exampleInstanceDomain})',
+	message: 'Vortex Node URL (e.g. {exampleInstanceDomain})',
 	comment: 'Instance selector text input placeholder. Example instance domain is interpolated.',
 });
 const INSTANCE_URL_REQUIRED_DESCRIPTOR = msg({
-	message: 'Enter an instance URL',
+	message: 'Enter your Vortex Node URL',
 	comment: 'Validation message shown when the authentication instance selector is submitted empty.',
 });
 const INSTANCE_URL_TOO_LONG_DESCRIPTOR = msg({
@@ -78,7 +78,7 @@ const FAILED_TO_REMOVE_INSTANCE_DESCRIPTOR = msg({
 	comment: 'Status message shown when a recent instance cannot be removed from the authentication instance selector.',
 });
 const INSTANCE_SELECTION_DESCRIPTOR = msg({
-	message: 'Instance selection',
+	message: 'Choose a Vortex Node',
 	comment: 'Accessible label for the authentication instance selector carousel.',
 });
 

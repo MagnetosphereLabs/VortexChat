@@ -125,6 +125,7 @@ export class VortexGateway {
         const guild=guildView(ids,state,space),previous=this.guilds.get(guild.id);liveGuilds.add(guild.id);
         if(!previous)this.dispatch('GUILD_CREATE',guild);
         else {
+          if(JSON.stringify(previous.emojis)!==JSON.stringify(guild.emojis))this.dispatch('GUILD_EMOJIS_UPDATE',{guild_id:guild.id,emojis:guild.emojis});
           if(JSON.stringify(previous.properties)!==JSON.stringify(guild.properties)||previous.member_count!==guild.member_count)
             this.dispatch('GUILD_UPDATE',{...guild.properties,member_count:guild.member_count});
           const oldMembers=new Map(previous.members.map(member=>[member.user.id,member]));

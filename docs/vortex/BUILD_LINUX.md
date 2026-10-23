@@ -109,3 +109,16 @@ This is a direct local testing path, independent of GitHub Actions. The server r
 A normal Node updater selects the published web client pinned by that Node revision. Until a matched release includes your source fix, update the backend first and run the local build/deploy command afterward. Subsequent local iterations use `git pull --ff-only` followed by the same command and reuse the existing compiler/dependency caches.
 
 The local builder runs installer tests, desktop type checks and encrypted database tests. It does not itself perform the browser, packaged GUI or actual screen-sharing acceptance checks. Those have separate CI and hardware test procedures; compiling successfully does not prove every feature works.
+
+## Node management and automatic capacity
+
+The shared renderer presents encrypted Spaces as servers. Node management is
+available to the Node administrator in settings; standard accounts retain their
+own account settings. In Node management, Storage shows the live filesystem
+capacity and protected reserve. Automatic file and total Chat limits use the
+remaining capacity after pending Chat and Vault transfers. Optional lower caps,
+account allowances and server allowances still apply. Existing data is retained
+when limits are reduced.
+
+For the supported UI operations and remaining protocol gaps, see
+[Client compatibility](COMPATIBILITY.md).

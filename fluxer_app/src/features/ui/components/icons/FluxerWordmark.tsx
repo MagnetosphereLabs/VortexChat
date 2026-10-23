@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import {DEFAULT_APP_SHELL_BRANDING, resolveAppShellBranding} from '@app/features/app/state/AppShellBranding';
+import { resolveAppShellBranding } from '@app/features/app/state/AppShellBranding';
 import RuntimeConfig from '@app/features/app/state/RuntimeConfig';
-import {type BrandSvgProps, getDataFlx, getImageSizingProps} from '@app/features/ui/components/icons/BrandImageUtils';
-import FluxerWordmarkMonochromeAsset from '@app/media/images/fluxer-logo-wordmark-monochrome.svg?react';
-import FluxerWordmarkAsset from '@app/media/images/fluxer-wordmark.svg?react';
-import {msg} from '@lingui/core/macro';
-import {useLingui} from '@lingui/react/macro';
-import {observer} from 'mobx-react-lite';
+import { type BrandSvgProps, getDataFlx, getImageSizingProps } from '@app/features/ui/components/icons/BrandImageUtils';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react/macro';
+import { observer } from 'mobx-react-lite';
 import type React from 'react';
 
 const APPLICATION_WORDMARK_DESCRIPTOR = msg({
@@ -19,11 +17,11 @@ interface FluxerWordmarkProps extends BrandSvgProps {
 	variant?: 'default' | 'monochrome';
 }
 
-export const FluxerWordmark = observer(({variant = 'default', ...props}: FluxerWordmarkProps) => {
-	const {i18n} = useLingui();
+export const FluxerWordmark = observer(({ variant: _variant, ...props }: FluxerWordmarkProps) => {
+	const { i18n } = useLingui();
 	const branding = resolveAppShellBranding(RuntimeConfig.getSnapshotOrNull());
 	const productName = branding.productName;
-	const ariaLabel = i18n._(APPLICATION_WORDMARK_DESCRIPTOR, {productName});
+	const ariaLabel = i18n._(APPLICATION_WORDMARK_DESCRIPTOR, { productName });
 	if (branding.wordmarkUrl !== null) {
 		return (
 			<img
@@ -34,7 +32,7 @@ export const FluxerWordmark = observer(({variant = 'default', ...props}: FluxerW
 			/>
 		);
 	}
-	if (productName !== DEFAULT_APP_SHELL_BRANDING.productName) {
+	{
 		const style: React.CSSProperties = {
 			...(props.style as React.CSSProperties | undefined),
 			alignItems: 'center',
@@ -54,6 +52,4 @@ export const FluxerWordmark = observer(({variant = 'default', ...props}: FluxerW
 			</span>
 		);
 	}
-	const Asset = variant === 'monochrome' ? FluxerWordmarkMonochromeAsset : FluxerWordmarkAsset;
-	return <Asset role="img" aria-label={ariaLabel} data-flx="ui.icons.fluxer-wordmark.img" {...props} />;
 });

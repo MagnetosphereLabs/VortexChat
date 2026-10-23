@@ -23,7 +23,7 @@ export function credentialRegisterFields(usernameSignIn: boolean): RegisterFormF
 }
 
 export function readRegistrationUrlCode(params: URLSearchParams): string | undefined {
-	return params.get('registration_url')?.trim() || undefined;
+	return params.get('registration_url')?.trim() || params.get('invite')?.trim() || undefined;
 }
 
 export function linkRegisterFields(

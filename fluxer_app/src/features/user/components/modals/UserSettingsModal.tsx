@@ -24,6 +24,7 @@ import type {UserSettingsTabType} from '@app/features/user/components/settings_u
 import {useMobileNavigation} from '@app/features/user/hooks/useMobileNavigation';
 import {SettingsContentKeyProvider} from '@app/features/user/hooks/useSettingsContentKey';
 import UserSettings from '@app/features/user/state/UserSettings';
+import Users from '@app/features/user/state/Users';
 import {useLingui} from '@lingui/react/macro';
 import {observer} from 'mobx-react-lite';
 import type React from 'react';
@@ -39,7 +40,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = observer(
 	({initialTab, initialSubtab, initialGuildId}) => {
 		const {i18n} = useLingui();
 		const isMobileExperience = isMobileExperienceEnabled();
-		const settingsTabs = useMemo(() => getSettingsTabs(i18n), [i18n.locale]);
+		const currentUser = Users.getCurrentUser();
+		const settingsTabs = useMemo(() => getSettingsTabs(i18n), [i18n, currentUser]);
 		const initialAccountSection =
 			getAccountSectionForNestedTab(initialTab) ?? getAccountSectionForLegacySection(initialSubtab);
 		const normalizedInitialTab = initialAccountSection ? ACCOUNT_SETTINGS_TAB : initialTab;

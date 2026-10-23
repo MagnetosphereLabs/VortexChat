@@ -106,6 +106,22 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   const channel=channels[0].id;
   const category=(await request('POST','/guilds/'+guild.id+'/channels',{name:'Encrypted category',type:4})).body;
   assert.equal(category.type,4);
+  const announcement=(await request('POST','/guilds/'+guild.id+'/channels',{name:'news',type:5})).body;
+  assert.equal(announcement.type,5);
+  await request('PATCH','/channels/'+announcement.id,{type:0});
+  assert.equal((await request('GET','/channels/'+announcement.id)).body.type,0);
+  await request('PATCH','/channels/'+announcement.id,{type:5});
+  assert.equal((await request('GET','/channels/'+announcement.id)).body.type,5);
+  const serversBefore=client.core.state.spaces.length;
+  await assert.rejects(request('POST','/guilds',{name:'Unsafe import',template:{roles:[{name:'private'}],channels:[{id:1,name:'secret',type:0}]}}),/roles/);
+  assert.equal(client.core.state.spaces.length,serversBefore);
+  const template=(await request('POST','/guilds',{name:'Imported layout',template:{roles:[],channels:[{id:1,name:'Updates',type:4},{id:2,name:'news',type:5,parent_id:1}]}})).body;
+  const imported=(await request('GET','/guilds/'+template.id+'/channels')).body;
+  assert.deepEqual(imported.map(item=>item.type).sort(),[4,5]);
+  assert.equal(imported.find(item=>item.type===5).parent_id,imported.find(item=>item.type===4).id);
+  await request('POST','/guilds/'+template.id+'/delete');
+  assert.equal(client.core.state.spaces.length,serversBefore);
+
   await request('PATCH','/guilds/'+guild.id+'/channels',[{id:channel,parent_id:category.id,position:1}]);
   assert.equal((await request('GET','/channels/'+channel)).body.parent_id,category.id);
   await assert.rejects(request('PATCH','/channels/'+channel,{permission_overwrites:[{id:guild.id,type:0,allow:'0',deny:'1024'}]}));
@@ -114,6 +130,27 @@ test('OPAQUE, MLS, encrypted files and a Space private from its Node operator', 
   assert.equal(client.core.state.rooms.length,count);
   await assert.rejects(request('PATCH','/channels/'+category.id,{parent_id:category.id}));
 
+  const bitmap=globalThis.createImageBitmap;
+  globalThis.createImageBitmap=async()=>({width:1,height:1,close(){}});
+  try {
+    const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l6kAAAAASUVORK5CYII=';
+    const upload=(await request('POST','/guilds/'+guild.id+'/emojis/bulk',{emojis:[{name:'private_wave',image}]})).body;
+    assert.equal(upload.failed.length,0);const emoji=upload.success[0];assert.ok(emoji.id);
+    assert.equal((await request('GET','/guilds/'+guild.id+'/emojis')).body[0].name,'private_wave');
+    const sent=(await request('POST','/channels/'+channel+'/messages',{content:`<:private_wave:${emoji.id}>`,nonce:'custom-emoji'})).body;
+    assert.match(sent.content,/<:private_wave:\d+>/u);
+    const raw=await client.core.action('events',{room:client.room(channel).id,after:0});
+    assert.equal(JSON.stringify(raw).includes('private_wave'),false);
+    assert.equal(JSON.stringify(raw).includes(image.slice(22)),false);
+    await request('PUT','/channels/'+channel+'/messages/'+sent.id+'/reactions/'+encodeURIComponent('private_wave:'+emoji.id)+'/@me');
+    const reacted=(await request('GET','/channels/'+channel+'/messages/'+sent.id)).body;
+    assert.equal(reacted.reactions[0].emoji.id,emoji.id);
+    await request('PATCH','/guilds/'+guild.id+'/emojis/'+emoji.id,{name:'renamed_wave'});
+    assert.equal((await request('GET','/guilds/'+guild.id+'/emojis')).body[0].name,'renamed_wave');
+    await request('DELETE','/guilds/'+guild.id+'/emojis/'+emoji.id);
+    assert.equal((await request('GET','/guilds/'+guild.id+'/emojis')).body.length,0);
+    assert.match((await request('GET','/channels/'+channel+'/messages/'+sent.id)).body.content,/private_wave/u);
+  } finally {globalThis.createImageBitmap=bitmap;}
   const message=(await request('POST','/channels/'+channel+'/messages',{content:'Through Fluxer',nonce:'test-nonce'})).body;
   assert.equal(message.content,'Through Fluxer');
   assert.equal((await request('POST','/channels/'+channel+'/messages',{content:'Through Fluxer',nonce:'test-nonce'})).body.id,message.id);

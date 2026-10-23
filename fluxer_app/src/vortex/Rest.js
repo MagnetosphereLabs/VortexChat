@@ -4,6 +4,8 @@ import {getSession,login,register,logout} from './Session.js';
 import {channelView,guildView,userView,materializeMessages,callView,freePremiumState} from './Projection.js';
 import {readConversationArchive,searchPrivateMessages} from './PrivateSearch.js';
 import {planChannelMoves} from './ChannelLayout.js';
+import {serverTemplatePlan} from './ServerTemplate.js';
+import {emojiCatalogRequest} from './EmojiCatalog.js';
 import {userSettingsView} from './UserSettingsView.js';
 
 export function vortexOrigin(endpoint) {
@@ -38,12 +40,13 @@ function supportedChannelFields(body,keys) {
 function parentRoom(session,space,parentId) {
   if(parentId==null)return null;
   const parent=session.room(parentId);
-  if(!parent||parent.space!==space||parent.meta.category!==true)throw new Error('Choose a category in this Space');
+  if(!parent||parent.space!==space||parent.meta.category!==true)throw new Error('Choose a category in this server');
   return parent.id;
 }
 function channelPatch(session,room,body) {
-  supportedChannelFields(body,['name','topic','position','parent_id','nsfw','bitrate']);
-  const patch={name:body.name,topic:body.topic,position:body.position,nsfw:body.nsfw};
+  supportedChannelFields(body,['name','topic','position','parent_id','nsfw','bitrate','type']);
+  if(body.type!==undefined&&(!room.space||room.kind!=='text'||room.meta.category||![0,5].includes(body.type)))unsupported('/channels/type');
+  const patch={...(body.type!==undefined?{announcement:body.type===5}:{}),name:body.name,topic:body.topic,position:body.position,nsfw:body.nsfw};
   if(body.name!==undefined&&(typeof body.name!=='string'||!body.name.trim()||body.name.length>100))throw new Error('Enter a channel name of at most 100 characters');
   if(body.topic!=null&&(typeof body.topic!=='string'||body.topic.length>4096))throw new Error('Channel topic is too long');
   if(body.position!==undefined&&(!Number.isSafeInteger(body.position)||body.position<0||body.position>10000))throw new Error('Invalid channel position');
@@ -51,6 +54,10 @@ function channelPatch(session,room,body) {
   if(body.parent_id!==undefined){if(room.meta.category&&body.parent_id!==null)throw new Error('Categories cannot be nested');patch.parent=parentRoom(session,room.space,body.parent_id);}
   if(body.bitrate!=null&&(room.kind!=='voice'||![32000,64000,128000].includes(body.bitrate)))unsupported('/channels/bitrate');
   return patch;
+}
+async function coreDownloadEmoji(session,file) {
+  if(!Number.isSafeInteger(file.size)||file.size>1024**2||!/^image\/(png|webp|gif|jpeg|avif)$/u.test(file.type))throw new Error('Invalid custom emoji');
+  return session.core.download(file);
 }
 const activeSends=new Map();
 async function sendMessage(session,room,body,files) {
@@ -64,6 +71,27 @@ async function sendMessage(session,room,body,files) {
     const attachments=[];
     for(const file of files)attachments.push(await session.core.upload(file,room));
     const payload={type:'message',text:body.content||'',nonce:body.nonce||crypto.randomUUID(),files:attachments};
+    // Emoji images and their keys travel inside the encrypted message. Copy an
+    // image into this conversation before referencing an emoji from elsewhere.
+    const referenced=[...payload.text.matchAll(/<(a?):([^:>]{1,32}):(\d+)>/gu)];
+    const media=new Map();
+    for(const match of referenced) {
+      if(media.has(match[3]))continue;
+      const emoji=(session.core.state.vortexEmojis||[]).find(item=>item.id===match[3]);
+      if(!emoji)throw new Error('This custom emoji is unavailable. Choose an emoji from this server.');
+      let file=emoji.file;
+      if(file.room!==room.id) {
+        const blob=await coreDownloadEmoji(session,file);
+        file={...await session.core.upload(new File([blob],file.name||emoji.name,{type:file.type}),room),room:room.id};
+      }
+      const id=await session.ids.add('emoji',file.id);
+      media.set(match[3],{name:emoji.name,file,id});
+    }
+    if(media.size) {
+      payload.text=payload.text.replace(/<(a?):([^:>]{1,32}):(\d+)>/gu,(full,animated,name,id)=>{const item=media.get(id);return item?`<${animated}:${item.name}:${item.id}>`:full;});
+      payload.emojiMedia=[...media.values()].map(({name,file})=>({name,file}));
+    }
+
     if(body.message_reference?.message_id)payload.reply=session.ids.raw('message',body.message_reference.message_id);
     await session.core.send(payload,'message',room);
     await session.ids.index(session.core.state);
@@ -171,23 +199,41 @@ export async function vortexRequest(origin,method,path,options={},token) {
       if(!user)throw Object.assign(new Error('Account unavailable'),{status:404});
       data=match[2]?{user:userView(ids,user),user_profile:{bio:'',pronouns:'',accent_color:null,banner:null},connected_accounts:[],mutual_guilds:[],mutual_friends:[]}:userView(ids,user);
     } else if(route==='/guilds'&&method==='POST') {
-      if(typeof body.name!=='string'||!body.name.trim())throw Object.assign(new Error('Enter a Space name'),{status:400});
+      if(typeof body.name!=='string'||!body.name.trim())throw Object.assign(new Error('Enter a server name'),{status:400});
+      if(body.icon)unsupported('/guilds/icon');
+      const plan=serverTemplatePlan(body.template);
       const space=(await core.action('space.create',{sealed:auth.b64(auth.random(64))})).id;
-      await core.createRoom('text',{space,spaceName:body.name,name:'general',members:[],background:true});
+      try {
+        if(!plan)await core.createRoom('text',{space,spaceName:body.name,name:'general',members:[],background:true});
+        else {
+          const categories=new Map();
+          for(const entry of plan) {
+            const room=await core.createRoom(entry.type===2?'voice':'text',{space,spaceName:body.name,name:entry.name,members:[],category:entry.type===4,announcement:entry.type===5,parent:entry.parent_id?categories.get(entry.parent_id):null,background:true});
+            if(entry.type===4)categories.set(entry.id,room.id);
+            await core.updateMetadata(room,{topic:entry.topic||'',position:entry.position||0,nsfw:entry.nsfw===true});
+            if(entry.type===2&&entry.bitrate)await core.action('room.audio',{room:room.id,audio:entry.bitrate/1000});
+          }
+        }
+      } catch(error) {
+        try {await core.action('space.delete',{space});}catch {throw new Error('Server creation stopped. A partial empty server remains; remove it before retrying.');}
+        throw error;
+      }
       await session.refresh(true);const guild=guildView(ids,state,state.spaces.find(s=>s.id===space));
       session.emit('GUILD_CREATE',guild);data={...guild.properties,roles:guild.roles,channels:guild.channels};
+    } else if((match=route.match(/^\/guilds\/(\d+)\/emojis(.*)$/u))) {
+      const result=await emojiCatalogRequest(session,ids.raw('guild',match[1]),method,match[2],body);data=result.body;status=result.status;
     } else if((match=route.match(/^\/guilds\/(\d+)\/channels$/u))) {
       const space=ids.raw('guild',match[1]);
       if(method==='GET')data=state.rooms.filter(room=>room.space===space).map(room=>channelView(ids,state,room));
       else if(method==='POST') {
         supportedChannelFields(body,['name','type','parent_id','bitrate']);
-        if(![0,2,4].includes(body.type??0))unsupported(route);
+        if(![0,2,4,5].includes(body.type??0))unsupported(route);
         if(typeof body.name!=='string'||!body.name.trim()||body.name.length>100)throw new Error('Enter a channel name of at most 100 characters');
         const parent=parentRoom(session,space,body.parent_id);
         if(body.type===4&&parent)throw new Error('Categories cannot be nested');
         if(body.bitrate!=null&&(body.type!==2||![32000,64000,128000].includes(body.bitrate)))unsupported('/channels/bitrate');
         const members=(await core.action('space.members',{space})).members.filter(member=>!member.banned).map(member=>member.user);
-        const room=await core.createRoom(body.type===2?'voice':'text',{space,spaceName:state.rooms.find(r=>r.space===space)?.meta.spaceName||'Space',name:body.name,members,category:body.type===4,parent,background:true});
+        const room=await core.createRoom(body.type===2?'voice':'text',{space,spaceName:state.rooms.find(r=>r.space===space)?.meta.spaceName||'Server',name:body.name,members,category:body.type===4,announcement:body.type===5,parent,background:true});
         if(body.bitrate!=null){await core.action('room.audio',{room:room.id,audio:body.bitrate/1000});room.audio=body.bitrate/1000;}
         await ids.index(state);data=channelView(ids,state,room);session.emit('CHANNEL_CREATE',data);
       } else if(method==='PATCH'&&Array.isArray(body)) {
@@ -198,6 +244,14 @@ export async function vortexRequest(origin,method,path,options={},token) {
         await session.refresh(true);for(const {room}of changes)session.emit('CHANNEL_UPDATE',channelView(ids,state,session.room(ids.get('channel',room.id))));
         status=204;
       } else unsupported(route);
+    } else if((match=route.match(/^\/guilds\/(\d+)$/u))&&method==='PATCH') {
+      const space=ids.raw('guild',match[1]);
+      supportedChannelFields(body,['name']);
+      if(typeof body.name!=='string'||!body.name.trim()||body.name.length>100)throw new Error('Enter a server name of at most 100 characters');
+      for(const room of state.rooms.filter(room=>room.space===space))await core.updateMetadata(room,{spaceName:body.name});
+      await session.refresh(true);data=guildView(ids,state,state.spaces.find(item=>item.id===space)).properties;session.emit('GUILD_UPDATE',data);
+    } else if((match=route.match(/^\/guilds\/(\d+)(\/delete)?$/u))&&((!match[2]&&method==='DELETE')||(match[2]&&method==='POST'))) {
+      await core.action('space.delete',{space:ids.raw('guild',match[1])});await session.refresh(true);session.emit('GUILD_DELETE',{id:match[1]});status=204;
     } else if((match=route.match(/^\/guilds\/(\d+)(?:\/members(?:\/(\d+))?)?$/u))&&method==='GET') {
       const guild=guildView(ids,state,state.spaces.find(s=>s.id===ids.raw('guild',match[1])));
       data=route.includes('/members')?(match[2]?guild.members.find(m=>m.user.id===match[2]):guild.members):{...guild.properties,roles:guild.roles};
@@ -246,14 +300,18 @@ export async function vortexRequest(origin,method,path,options={},token) {
         else if(eventRoute[3]==='reactions'){
           if(method==='GET'){
             const event=materializeMessages(state,room).find(event=>event.id===target&&!event.deleted);
-            const people=event?.reactions.get(decodeURIComponent(eventRoute[4]))||new Set();
+            const requested=decodeURIComponent(eventRoute[4]),emoji=(state.vortexEmojis||[]).find(item=>requested.endsWith(':'+item.id));
+            const people=event?.reactions.get(emoji?'custom:'+emoji.file.id:requested)||new Set();
             data=[...people].map(id=>state.users.find(user=>user.id===id)||state.formerUsers?.find(user=>user.id===id)).filter(Boolean).map(user=>userView(ids,user));
             if(query.after)data=data.filter(user=>BigInt(user.id)>BigInt(query.after));
             data.sort((a,b)=>BigInt(a.id)<BigInt(b.id)?-1:1);data=data.slice(0,Math.max(1,Math.min(100,Number(query.limit)||25)));
             return {ok:true,status:200,headers:{'content-type':'application/json'},body:data};
           }
           if(!['PUT','DELETE'].includes(method))unsupported(route);
-          await core.send({type:'reaction',target,emoji:decodeURIComponent(eventRoute[4]),remove:method==='DELETE'},'message',room);status=204;
+          const requested=decodeURIComponent(eventRoute[4]),custom=requested.match(/^([^:]+):(\d+)$/u);
+          const entry=custom&&(state.vortexEmojis||[]).find(emoji=>emoji.id===custom[2]);
+          if(custom&&!entry)throw new Error('This custom emoji is unavailable. Reopen the conversation to refresh it.');
+          await core.send({type:'reaction',target,emoji:entry?'custom:'+entry.file.id:requested,remove:method==='DELETE',...(entry?{emojiFile:entry.file,emojiName:entry.name}:{})},'message',room);status=204;
         } else if(eventRoute[1]==='pins'&&['PUT','DELETE'].includes(method)){await core.send({type:'pin',target,enabled:method==='PUT'},'message',room);status=204;}
         else if(method==='PATCH'){await core.send({type:'edit',target,text:body.content},'message',room);}
         else if(method==='DELETE'){await core.send({type:'delete',target},'message',room);session.emit('MESSAGE_DELETE',{id:eventRoute[2],channel_id:match[1]});status=204;}
@@ -285,7 +343,7 @@ export async function vortexRequest(origin,method,path,options={},token) {
     else if(route==='/vortex/users'&&method==='GET')data=await core.action('admin.users');
     else if(route==='/vortex/users'&&method==='PATCH'){await core.action('admin.user',body);status=204;}
     else if(route==='/vortex/invite'&&method==='POST')data=await core.action('invite',body);
-    else if(route==='/vortex/spaces'&&method==='GET')data=state.spaces.map(space=>({id:space.id,name:state.rooms.find(r=>r.space===space.id)?.meta.spaceName||'Space',canInvite:space.creator===state.me.id||!!(space.permissions&2)}));
+    else if(route==='/vortex/spaces'&&method==='GET')data=state.spaces.map(space=>({id:space.id,name:state.rooms.find(r=>r.space===space.id)?.meta.spaceName||'Server',canInvite:space.creator===state.me.id||!!(space.permissions&2)}));
     else if(route==='/vortex/space-invites'&&method==='GET')data=(await core.invitations()).map(item=>({id:item.id,name:item.name,sender:state.users.find(u=>u.id===item.sender)?.username,channels:item.body.rooms.length}));
     else if(route==='/vortex/space-invites'&&method==='POST'){
       const target=state.users.find(user=>user.username===body.username);if(!target)throw new Error('No account has that username on this Node');

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import {remFromPx} from '@app/features/theme/layout/RemFromPx';
-import FluxerLogoAsset from '@app/media/images/fluxer-logo-color.svg?react';
+import {FluxerIconMark} from '@app/features/ui/components/icons/FluxerIconMark';
 import {GlobeIcon} from '@phosphor-icons/react';
 import type React from 'react';
 import {useState} from 'react';
@@ -50,11 +50,11 @@ export function InstanceBrandMark({
 	'data-flx': dataFlx,
 }: InstanceBrandMarkProps): React.ReactElement {
 	if (isOfficial) {
-		return <FluxerLogoAsset aria-hidden="true" data-flx={dataFlx} />;
+		return <FluxerIconMark aria-hidden="true" data-flx={dataFlx} />;
 	}
 	const globe = <GlobeIcon size={remFromPx(size)} weight={globeWeight} aria-hidden="true" data-flx={dataFlx} />;
 	if (iconUrl == null) {
-		return globe;
+		return <FluxerIconMark width={size} height={size} aria-hidden="true" data-flx={dataFlx} />;
 	}
 	return (
 		<InstanceBrandImage

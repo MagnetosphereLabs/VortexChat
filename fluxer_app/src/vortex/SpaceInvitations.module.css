@@ -1,6 +1,57 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
-.form { display: grid; gap: 1rem; }
-.invitations { margin: 1rem; padding: 1rem; border: 1px solid var(--background-modifier-accent); background: var(--background-secondary); border-radius: 0.75rem; }
-.invitation { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.5rem; }
-.label { display: grid; flex: 1; gap: 0.25rem; min-width: 10rem; }
-.label span { color: var(--text-secondary); font-size: 0.875rem; }
+.form {
+	display: grid;
+	gap: 1rem;
+}
+.invitations {
+	margin: 1rem;
+	padding: 1rem;
+	border: 1px solid var(--background-modifier-accent);
+	background: var(--background-secondary);
+	border-radius: 0.75rem;
+}
+.invitation {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.5rem;
+}
+.label {
+	display: grid;
+	flex: 1;
+	gap: 0.25rem;
+	min-width: 10rem;
+}
+.label span {
+	color: var(--text-secondary);
+	font-size: 0.875rem;
+}
+
+.friends {
+	display: flex;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+	max-height: 10rem;
+	overflow: auto;
+}
+.inviteLink {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 0.7rem;
+	margin: 0.5rem 0;
+	border: 1px solid var(--background-modifier-accent);
+	border-radius: 0.5rem;
+	color: var(--text-primary);
+	background: var(--background-secondary);
+}
+.invitations h2 {
+	font-size: 1.1rem;
+	font-weight: 600;
+	margin: 0 0 0.75rem;
+}
+.invitations > p {
+	color: var(--text-secondary);
+	font-size: 0.9rem;
+	line-height: 1.6;
+}

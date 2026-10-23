@@ -8,6 +8,7 @@ import type {UserPrivate, User as WireUser} from '@fluxer/schema/src/domains/use
 import {makeAutoObservable, observableRef, reaction, runInAction} from 'mobx';
 
 const CURRENT_USER_PRIVATE_WIRE_KEYS = [
+	'vortex_node_owner',
 	'is_staff',
 	'email',
 	'email_bounced',

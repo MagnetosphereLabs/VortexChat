@@ -20,7 +20,7 @@ export interface AuthLoginMethodAction {
 interface AuthLoginMethodPickerProps {
 	readonly footerAction: ReactNode;
 	readonly primaryAction: AuthLoginMethodAction;
-	readonly registerAction: ReactElement;
+	readonly registerAction: ReactElement | null;
 	readonly secondaryActions: ReadonlyArray<AuthLoginMethodAction>;
 }
 

@@ -51,6 +51,7 @@ describe('register form fields', () => {
 			expect(linkRegisterFields(snapshot(false, mode), code)).toEqual(EMAIL_CREDENTIALS);
 		}
 		expect(readRegistrationUrlCode(new URLSearchParams('?registration_url=%20'))).toBeUndefined();
+		expect(readRegistrationUrlCode(new URLSearchParams('?invite=legacy-invitation'))).toBe('legacy-invitation');
 	});
 
 	it('always asks for a username and password on link sign-ups of a username instance', () => {
