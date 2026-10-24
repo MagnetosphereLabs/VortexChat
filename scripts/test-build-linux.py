@@ -29,11 +29,11 @@ class SSHTransportTests(unittest.TestCase):
             result = {'web_sha256': hashlib.sha256(b'web').hexdigest(), 'source_commit': 'b' * 40}
             options = ['ControlMaster=auto', 'ControlPath=/tmp/private-connection']
             with patch.object(builder, 'run', return_value=subprocess.CompletedProcess([], 0, '/tmp/vortex-web.12345678\n')) as run, patch.object(builder.subprocess, 'run'):
-                builder.deploy_web(output, result, 'admin@192.0.2.10', 7142, node_revision='a' * 40, ssh_options=options)
+                builder.deploy_web(output, result, 'admin@192.0.2.10', 2222, node_revision='a' * 40, ssh_options=options)
             transfer, activate = run.call_args_list[1].args, run.call_args_list[2].args
-            self.assertEqual(transfer[:3], ('scp', '-P', '7142'))
+            self.assertEqual(transfer[:3], ('scp', '-P', '2222'))
             self.assertIn('ControlPath=/tmp/private-connection', transfer)
-            self.assertEqual(activate[:3], ('ssh', '-p', '7142'))
+            self.assertEqual(activate[:3], ('ssh', '-p', '2222'))
             self.assertIn('ControlPath=/tmp/private-connection', activate)
             command = activate[-1]
             self.assertIn('"$vortex_installed_ref" != ' + 'a' * 40, command)

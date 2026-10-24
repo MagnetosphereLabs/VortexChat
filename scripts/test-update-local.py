@@ -18,7 +18,7 @@ class LocalUpdateTests(unittest.TestCase):
     def test_connection_is_saved_privately_and_reused_without_prompts(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'connection.json'
-            first = SimpleNamespace(host='192.0.2.10', port=7142, user='admin', configure=False)
+            first = SimpleNamespace(host='192.0.2.10', port=2222, user='admin', configure=False)
             saved = updater.connection_settings(first, path)
             again = SimpleNamespace(host=None, port=None, user=None, configure=False)
             with patch('builtins.input', side_effect=AssertionError('Unexpected prompt')):
@@ -29,7 +29,7 @@ class LocalUpdateTests(unittest.TestCase):
     def test_failed_client_build_never_updates_the_server(self):
         with patch.object(updater, 'build_clients', side_effect=RuntimeError('compile failed')), patch.object(updater.builder, 'run') as run, patch.object(updater.builder, 'deploy_web') as deploy:
             with self.assertRaises(RuntimeError):
-                updater.update(SimpleNamespace(), {'host': '192.0.2.10', 'port': 7142, 'user': 'admin'}, Path('/unused'))
+                updater.update(SimpleNamespace(), {'host': '192.0.2.10', 'port': 2222, 'user': 'admin'}, Path('/unused'))
         run.assert_not_called()
         deploy.assert_not_called()
 
@@ -37,9 +37,9 @@ class LocalUpdateTests(unittest.TestCase):
         events = []
         result = {'source_commit': 'b' * 40}
         with tempfile.TemporaryDirectory() as directory, patch.object(updater, 'build_clients', side_effect=lambda *args: events.append('build') or result), patch.object(updater.builder, 'run', side_effect=lambda *args, **kwargs: events.append('revision') or subprocess.CompletedProcess([], 0, 'a' * 40 + '\trefs/heads/vortex/preview\n')), patch.object(updater.builder, 'deploy_web', side_effect=lambda *args, **kwargs: events.append('deploy')) as deploy, patch.object(updater.subprocess, 'run'):
-            updater.update(SimpleNamespace(), {'host': '192.0.2.10', 'port': 7142, 'user': 'admin'}, Path(directory))
+            updater.update(SimpleNamespace(), {'host': '192.0.2.10', 'port': 2222, 'user': 'admin'}, Path(directory))
         self.assertEqual(events, ['build', 'revision', 'deploy'])
-        self.assertEqual(deploy.call_args.args[2:], ('admin@192.0.2.10', 7142))
+        self.assertEqual(deploy.call_args.args[2:], ('admin@192.0.2.10', 2222))
         self.assertEqual(deploy.call_args.kwargs['node_revision'], 'a' * 40)
         self.assertIn('ControlMaster=auto', deploy.call_args.kwargs['ssh_options'])
 
